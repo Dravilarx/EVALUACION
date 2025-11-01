@@ -1,0 +1,5 @@
+{
+  "name": "EvalúaMed",
+  "description": "Una aplicación web completa para crear y gestionar un banco de preguntas, armar cuestionarios, asignarlos a alumnos y analizar estadísticas detalladas de rendimiento. Incluye generación de preguntas asistida por IA con Gemini.",
+  "requestFramePermissions": []
+}
