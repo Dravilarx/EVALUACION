@@ -1,5 +1,7 @@
+
 import React, { useState, useMemo } from 'react';
 import { Quiz, Question, StudentStats, QuestionStats, QuizStats } from '../types';
+import { getGradeColor } from '../utils';
 
 type Tab = 'alumnos' | 'preguntas' | 'cuestionarios';
 
@@ -22,6 +24,11 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
     </button>
 );
 
+const SortIcon: React.FC<{ direction: 'asc' | 'desc' | null }> = ({ direction }) => {
+    if (!direction) return <span className="ml-1 opacity-20">⇅</span>;
+    return <span className="ml-1">{direction === 'asc' ? '↑' : '↓'}</span>;
+}
+
 const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, questionStats, quizStats, quizzes, questions }) => {
     const [activeTab, setActiveTab] = useState<Tab>('alumnos');
 
@@ -30,11 +37,22 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
     const [questionFilter, setQuestionFilter] = useState({ text: '', especialidad: '', docente: '' });
     const [quizFilter, setQuizFilter] = useState({ text: '', asignatura: '', docente: '' });
 
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'totalAnswers', direction: 'desc' }); // Default to most used
+
     // Memoized filter options
     const questionDocentes = useMemo(() => [...new Set(questions.map(q => q.docente_creador))], [questions]);
     const questionEspecialidades = useMemo(() => [...new Set(questions.map(q => q.especialidad))], [questions]);
     const quizDocentes = useMemo(() => [...new Set(quizzes.map(q => q.docente_creador))], [quizzes]);
     const quizAsignaturas = useMemo(() => [...new Set(quizzes.map(q => q.asignatura))], [quizzes]);
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
 
     // Memoized filtered data
     const filteredStudentStats = useMemo(() => {
@@ -47,14 +65,25 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
     }, [studentStats, studentFilter]);
 
     const filteredQuestionStats = useMemo(() => {
-        return questionStats.filter(q => {
+        let filtered = questionStats.filter(q => {
             const searchText = questionFilter.text.toLowerCase();
-            const textMatch = !searchText || q.enunciado.toLowerCase().includes(searchText);
+            const textMatch = !searchText || q.enunciado.toLowerCase().includes(searchText) || q.codigo_pregunta.toLowerCase().includes(searchText);
             const especialidadMatch = !questionFilter.especialidad || q.especialidad === questionFilter.especialidad;
             const docenteMatch = !questionFilter.docente || q.docente_creador === questionFilter.docente;
             return textMatch && especialidadMatch && docenteMatch;
         });
-    }, [questionStats, questionFilter]);
+
+        if (sortConfig) {
+            filtered.sort((a, b) => {
+                const aValue = a[sortConfig.key as keyof QuestionStats];
+                const bValue = b[sortConfig.key as keyof QuestionStats];
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return filtered;
+    }, [questionStats, questionFilter, sortConfig]);
     
     const filteredQuizStats = useMemo(() => {
         return quizStats.filter(q => {
@@ -80,7 +109,7 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                                         <th className="p-3">Alumno</th>
                                         <th className="p-3">Curso</th>
                                         <th className="p-3 text-center">Intentos</th>
-                                        <th className="p-3 text-center">Nota Media</th>
+                                        <th className="p-3 text-center">Nota Promedio</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -89,7 +118,9 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                                             <td className="p-3 font-medium">{s.studentName}</td>
                                             <td className="p-3 text-text-secondary">{s.studentCourse}</td>
                                             <td className="p-3 text-center">{s.attemptCount}</td>
-                                            <td className="p-3 text-center font-semibold">{s.averageScore.toFixed(1)}%</td>
+                                            <td className={`p-3 text-center font-bold text-lg ${getGradeColor(s.averageScore)}`}>
+                                                {s.averageGrade ? s.averageGrade.toFixed(1) : '-'}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -101,7 +132,7 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                  return (
                     <div className="space-y-4">
                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <input type="text" placeholder="Buscar por enunciado..." value={questionFilter.text} onChange={e => setQuestionFilter(prev => ({...prev, text: e.target.value}))} className="w-full bg-background border border-secondary/30 rounded p-2 md:col-span-3" />
+                            <input type="text" placeholder="Buscar por enunciado o código..." value={questionFilter.text} onChange={e => setQuestionFilter(prev => ({...prev, text: e.target.value}))} className="w-full bg-background border border-secondary/30 rounded p-2 md:col-span-3" />
                              <select value={questionFilter.especialidad} onChange={e => setQuestionFilter(prev => ({...prev, especialidad: e.target.value}))} className="w-full bg-background border border-secondary/30 rounded p-2">
                                  <option value="">Toda Especialidad</option>
                                  {questionEspecialidades.map(e => <option key={e} value={e}>{e}</option>)}
@@ -111,25 +142,34 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                                  {questionDocentes.map(d => <option key={d} value={d}>{d}</option>)}
                              </select>
                          </div>
+                         <p className="text-xs text-text-secondary italic">* Haz clic en los encabezados para ordenar. "Intentos" muestra las preguntas más utilizadas.</p>
                         <div className="bg-surface rounded-lg shadow-md border border-secondary/20 max-h-[60vh] overflow-y-auto">
                            <table className="w-full text-sm text-left">
-                                <thead className="bg-secondary/20 sticky top-0">
+                                <thead className="bg-secondary/20 sticky top-0 text-text-primary">
                                     <tr>
-                                        <th className="p-3 w-2/4">Pregunta</th>
-                                        <th className="p-3">Especialidad</th>
-                                        <th className="p-3 text-center">Intentos</th>
-                                        <th className="p-3 text-center">% Acierto</th>
+                                        <th className="p-3 w-2/4 cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('enunciado')}>
+                                            Pregunta <SortIcon direction={sortConfig?.key === 'enunciado' ? sortConfig.direction : null} />
+                                        </th>
+                                        <th className="p-3 cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('especialidad')}>
+                                            Especialidad <SortIcon direction={sortConfig?.key === 'especialidad' ? sortConfig.direction : null} />
+                                        </th>
+                                        <th className="p-3 text-center cursor-pointer hover:bg-secondary/30" title="Cantidad de veces que ha sido respondida (indicador de uso)" onClick={() => handleSort('totalAnswers')}>
+                                            Intentos (Uso) <SortIcon direction={sortConfig?.key === 'totalAnswers' ? sortConfig.direction : null} />
+                                        </th>
+                                        <th className="p-3 text-center cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('successRate')}>
+                                            % Acierto <SortIcon direction={sortConfig?.key === 'successRate' ? sortConfig.direction : null} />
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredQuestionStats.sort((a,b) => a.successRate - b.successRate).map(q => (
+                                    {filteredQuestionStats.map(q => (
                                         <tr key={q.codigo_pregunta} className="border-b border-secondary/20 hover:bg-secondary/10">
                                             <td className="p-3">
                                                 <p className="font-medium truncate" title={q.enunciado}>{q.enunciado}</p>
                                                 <p className="text-xs text-text-secondary font-mono">{q.codigo_pregunta}</p>
                                             </td>
                                             <td className="p-3 text-text-secondary">{q.especialidad}</td>
-                                            <td className="p-3 text-center">{q.totalAnswers}</td>
+                                            <td className="p-3 text-center font-semibold">{q.totalAnswers}</td>
                                             <td className={`p-3 text-center font-semibold ${q.successRate < 40 ? 'text-danger' : q.successRate > 80 ? 'text-success' : ''}`}>{q.successRate.toFixed(1)}%</td>
                                         </tr>
                                     ))}
@@ -169,7 +209,9 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                                             <td className="p-3 font-medium">{q.quizTitle}</td>
                                             <td className="p-3 text-text-secondary">{q.asignatura}</td>
                                             <td className="p-3 text-center">{q.participantCount}</td>
-                                            <td className="p-3 text-center font-semibold">{q.averageScore.toFixed(1)}%</td>
+                                            <td className="p-3 text-center font-semibold">
+                                                {q.averageScore.toFixed(1)}%
+                                            </td>
                                             <td className="p-3 text-center">{Math.round(q.averageTimeSeconds / 60)} min</td>
                                         </tr>
                                     ))}

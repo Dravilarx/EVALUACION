@@ -1,3 +1,4 @@
+
 export enum QuestionType {
   MultipleChoice = "multiple_choice",
   TrueFalse = "true_false",
@@ -41,6 +42,7 @@ export interface Question {
   tiene_multimedia: boolean;
   fecha_creacion: string;
   veces_utilizada: number;
+  rating?: 0 | 1 | 2 | 3; // 0: Sin clasificar, 1-3: Estrellas de favorito
 }
 
 export interface QuizQuestion {
@@ -91,8 +93,9 @@ export interface Attempt {
     puntaje_total_obtenido: number;
     puntaje_total_posible: number;
     porcentaje: number;
+    nota?: number; // Grade on 1.0 to 7.0 scale
     tiempo_utilizado_seg: number;
-    estado: "entregado" | "en_progreso" | "expirado";
+    estado: "entregado" | "en_progreso" | "expirado" | "pendiente_revision";
 }
 
 export interface StudentStats {
@@ -101,6 +104,7 @@ export interface StudentStats {
   studentCourse: string;
   attemptCount: number;
   averageScore: number;
+  averageGrade: number; // Average Note
 }
 
 export interface QuestionStats {

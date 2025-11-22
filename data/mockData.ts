@@ -1,3 +1,4 @@
+
 import { Question, Quiz, Attempt, QuestionType, Student } from '../types';
 
 export const mockStudents: Student[] = [
@@ -35,7 +36,8 @@ export const initialQuestions: Question[] = [
     etiquetas: ["urología", "hidronefrosis"],
     tiene_multimedia: true,
     fecha_creacion: new Date().toISOString().split('T')[0],
-    veces_utilizada: 5
+    veces_utilizada: 5,
+    rating: 2
   },
   {
     codigo_pregunta: "CAR-ANA-0001",
@@ -54,6 +56,7 @@ export const initialQuestions: Question[] = [
     tiene_multimedia: false,
     fecha_creacion: new Date(Date.now() - 86400000 * 5).toISOString().split('T')[0],
     veces_utilizada: 12,
+    rating: 0
   },
    {
     codigo_pregunta: "NEU-LUC-0002",
@@ -76,6 +79,7 @@ export const initialQuestions: Question[] = [
     tiene_multimedia: false,
     fecha_creacion: new Date(Date.now() - 86400000 * 10).toISOString().split('T')[0],
     veces_utilizada: 8,
+    rating: 3
   }
 ];
 
@@ -136,6 +140,7 @@ export const initialAttempts: Attempt[] = [
         puntaje_total_obtenido: 5,
         puntaje_total_posible: 5,
         porcentaje: 100.00,
+        nota: 7.0,
         tiempo_utilizado_seg: 600,
         estado: "entregado"
     },
@@ -151,6 +156,7 @@ export const initialAttempts: Attempt[] = [
         puntaje_total_obtenido: 0,
         puntaje_total_posible: 5,
         porcentaje: 0.00,
+        nota: 1.0,
         tiempo_utilizado_seg: 900,
         estado: "entregado"
     }

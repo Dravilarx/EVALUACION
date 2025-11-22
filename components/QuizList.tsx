@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import { Quiz, Question, Student } from '../types';
 import QuizForm from './QuizForm';
 import QuizAssignmentForm from './QuizAssignmentForm';
-import { PlayIcon, PlusIcon, AssignUserIcon, DuplicateIcon, FilterIcon, EditIcon } from './icons';
+import { PlayIcon, PlusIcon, AssignUserIcon, DuplicateIcon, FilterIcon, EditIcon, TrashIcon } from './icons';
 
 interface QuizCardProps {
     quiz: Quiz;
@@ -10,9 +11,10 @@ interface QuizCardProps {
     onAssign: (quiz: Quiz) => void;
     onDuplicate: (quiz: Quiz) => void;
     onEdit: (quiz: Quiz) => void;
+    onDelete: (id: string) => void;
 }
 
-const QuizCard: React.FC<QuizCardProps> = ({ quiz, onStart, onAssign, onDuplicate, onEdit }) => {
+const QuizCard: React.FC<QuizCardProps> = ({ quiz, onStart, onAssign, onDuplicate, onEdit, onDelete }) => {
     const isAvailable = new Date(quiz.ventana_disponibilidad.fin) > new Date();
     
     return (
@@ -34,7 +36,10 @@ const QuizCard: React.FC<QuizCardProps> = ({ quiz, onStart, onAssign, onDuplicat
                 </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                 <button onClick={() => onDelete(quiz.id_cuestionario)} className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-danger/10 text-danger hover:bg-danger/20 transition-colors">
+                    <TrashIcon /> <span className="hidden sm:inline">Eliminar</span>
+                </button>
                  <button onClick={() => onEdit(quiz)} className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-secondary hover:bg-secondary/80 transition-colors">
                     <EditIcon /> <span className="hidden sm:inline">Editar</span>
                 </button>
@@ -62,17 +67,30 @@ interface QuizListProps {
     onStartQuiz: (quizId: string) => void;
     onAddQuiz: (newQuiz: Quiz) => void;
     onUpdateQuiz: (updatedQuiz: Quiz) => void;
+    onDeleteQuiz: (id: string) => void;
     allQuestions: Question[];
     allStudents: Student[];
     onSaveAssignment: (quizId: string, updatedData: Partial<Quiz>) => void;
+    initialDraft?: Quiz | null;
+    onClearDraft?: () => void;
 }
 
-const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, onUpdateQuiz, allQuestions, allStudents, onSaveAssignment }) => {
+const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, onUpdateQuiz, onDeleteQuiz, allQuestions, allStudents, onSaveAssignment, initialDraft, onClearDraft }) => {
     const [isQuizFormOpen, setIsQuizFormOpen] = useState(false);
     const [isAssignmentFormOpen, setIsAssignmentFormOpen] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
     const [duplicatingQuiz, setDuplicatingQuiz] = useState<Quiz | null>(null);
     const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    
+    // If an initial draft is passed (from QuestionBank), open the form with it
+    useEffect(() => {
+        if (initialDraft) {
+            setEditingQuiz(initialDraft);
+            setIsQuizFormOpen(true);
+            if (onClearDraft) onClearDraft();
+        }
+    }, [initialDraft, onClearDraft]);
     
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [filterText, setFilterText] = useState('');
@@ -124,12 +142,25 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
     };
 
     const handleSaveQuiz = (quizData: Quiz) => {
-        if (editingQuiz) {
+        // Check if we are editing an existing quiz (has ID) or creating a new one (from scratch or from draft)
+        // If editingQuiz has an empty ID, it's a draft from the bank, so treat as new
+        if (editingQuiz && editingQuiz.id_cuestionario !== "") {
             onUpdateQuiz(quizData);
         } else {
             onAddQuiz(quizData);
         }
         handleCloseForms();
+    };
+
+    const handleDeleteClick = (id: string) => {
+        setDeleteConfirm(id);
+    };
+
+    const handleConfirmDelete = () => {
+        if (deleteConfirm) {
+            onDeleteQuiz(deleteConfirm);
+            setDeleteConfirm(null);
+        }
     };
 
     return (
@@ -177,6 +208,7 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
                         onAssign={handleOpenAssignment} 
                         onDuplicate={handleDuplicateQuiz}
                         onEdit={handleOpenEdit} 
+                        onDelete={handleDeleteClick}
                     />
                 ))}
             </div>
@@ -188,7 +220,7 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
                     onSave={handleSaveQuiz}
                     allQuestions={allQuestions}
                     initialData={editingQuiz || duplicatingQuiz}
-                    isEditing={!!editingQuiz}
+                    isEditing={!!editingQuiz && editingQuiz.id_cuestionario !== ""}
                 />
             )}
             
@@ -200,6 +232,35 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
                     quiz={selectedQuiz}
                     allStudents={allStudents}
                 />
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {deleteConfirm && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                     <div className="bg-surface p-6 rounded-xl shadow-2xl border border-secondary/20 max-w-md w-full text-center">
+                        <div className="mx-auto bg-danger/10 w-16 h-16 rounded-full flex items-center justify-center mb-4">
+                            <TrashIcon className="h-8 w-8 text-danger" />
+                        </div>
+                        <h3 className="text-xl font-bold text-text-primary mb-2">¿Eliminar Cuestionario?</h3>
+                        <p className="text-text-secondary mb-6">
+                            Esta acción eliminará permanentemente el cuestionario <strong>{deleteConfirm}</strong> y no se puede deshacer.
+                        </p>
+                        <div className="flex justify-center gap-4">
+                            <button 
+                                onClick={() => setDeleteConfirm(null)}
+                                className="px-6 py-2 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={handleConfirmDelete}
+                                className="px-6 py-2 rounded-lg bg-danger hover:bg-danger/80 text-white font-bold shadow-lg shadow-danger/20 transition-colors"
+                            >
+                                Sí, Eliminar
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
