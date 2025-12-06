@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Quiz, Question, Student } from '../types';
+import { Quiz, Question, Student, Subject } from '../types';
 import QuizForm from './QuizForm';
 import QuizAssignmentForm from './QuizAssignmentForm';
 import { PlayIcon, PlusIcon, AssignUserIcon, DuplicateIcon, FilterIcon, EditIcon, TrashIcon } from './icons';
@@ -73,9 +73,10 @@ interface QuizListProps {
     onSaveAssignment: (quizId: string, updatedData: Partial<Quiz>) => void;
     initialDraft?: Quiz | null;
     onClearDraft?: () => void;
+    subjects: Subject[]; // Received subjects from parent
 }
 
-const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, onUpdateQuiz, onDeleteQuiz, allQuestions, allStudents, onSaveAssignment, initialDraft, onClearDraft }) => {
+const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, onUpdateQuiz, onDeleteQuiz, allQuestions, allStudents, onSaveAssignment, initialDraft, onClearDraft, subjects }) => {
     const [isQuizFormOpen, setIsQuizFormOpen] = useState(false);
     const [isAssignmentFormOpen, setIsAssignmentFormOpen] = useState(false);
     const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
@@ -98,7 +99,9 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
     const [filterAsignatura, setFilterAsignatura] = useState('');
 
     const docentes = useMemo(() => [...new Set(quizzes.map(q => q.docente_creador))], [quizzes]);
-    const asignaturas = useMemo(() => [...new Set(quizzes.map(q => q.asignatura))], [quizzes]);
+    
+    // Use the dynamic subjects list for filters instead of just quiz properties, although falling back to quiz props is safe for filtering
+    const asignaturaOptions = useMemo(() => subjects.map(s => s.name), [subjects]);
 
     const filteredQuizzes = useMemo(() => {
         return quizzes.filter(quiz => {
@@ -194,7 +197,7 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
                     </select>
                      <select value={filterAsignatura} onChange={e => setFilterAsignatura(e.target.value)} className="w-full bg-background border border-secondary/30 rounded p-2">
                         <option value="">Toda Asignatura</option>
-                        {asignaturas.map(a => <option key={a} value={a}>{a}</option>)}
+                        {asignaturaOptions.map(a => <option key={a} value={a}>{a}</option>)}
                     </select>
                 </div>
             )}
@@ -221,6 +224,7 @@ const QuizList: React.FC<QuizListProps> = ({ quizzes, onStartQuiz, onAddQuiz, on
                     allQuestions={allQuestions}
                     initialData={editingQuiz || duplicatingQuiz}
                     isEditing={!!editingQuiz && editingQuiz.id_cuestionario !== ""}
+                    subjects={subjects} // Pass subjects
                 />
             )}
             

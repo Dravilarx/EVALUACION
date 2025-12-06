@@ -1,31 +1,74 @@
+
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EvalúaMed</title>
+  <title>GRUA - Gestión Radiología</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
           colors: {
-            'primary': '#0284c7',
-            'primary-dark': '#0369a1',
-            'secondary': '#475569',
-            'background': '#0f172a',
-            'surface': '#1e293b',
-            'text-primary': '#f8fafc',
-            'text-secondary': '#cbd5e1',
-            'accent': '#38bdf8',
-            'success': '#22c55e',
+            // Indigo Primary Palette (#6366f1)
+            primary: {
+              DEFAULT: '#6366f1',
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            // Semantic Colors mapping for existing components
+            'primary-dark': '#4338ca', // Mapped to Indigo 700
+            'accent': '#0ea5e9', // Sky blue for secondary actions
+            'success': '#10b981',
             'danger': '#ef4444',
-            'warning': '#f97316'
+            'warning': '#f59e0b',
+            
+            // Backgrounds & Surfaces (Adapting to Dark/Light)
+            'background': 'var(--bg-color)', 
+            'surface': 'var(--surface-color)',
+            
+            // Text Colors
+            'text-primary': 'var(--text-primary)',
+            'text-secondary': 'var(--text-secondary)',
+            
+            // Static Greys for borders/dividers
+            'secondary': '#94a3b8', 
           }
         }
       }
     }
   </script>
+  <style>
+    /* CSS Variables for Theming to support existing components without rewriting them */
+    :root {
+      --bg-color: #f8fafc; /* Slate 50 */
+      --surface-color: #ffffff; /* White */
+      --text-primary: #0f172a; /* Slate 900 */
+      --text-secondary: #64748b; /* Slate 500 */
+    }
+
+    .dark {
+      --bg-color: #0f172a; /* Slate 900 */
+      --surface-color: #1e293b; /* Slate 800 */
+      --text-primary: #f8fafc; /* Slate 50 */
+      --text-secondary: #94a3b8; /* Slate 400 */
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      transition: background-color 0.3s, color 0.3s;
+    }
+  </style>
 <script type="importmap">
 {
   "imports": {
@@ -38,7 +81,7 @@
 }
 </script>
 </head>
-<body class="bg-background text-text-primary">
+<body class="antialiased">
   <div id="root"></div>
 </body>
 </html>

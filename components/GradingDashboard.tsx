@@ -66,7 +66,7 @@ const GradingDashboard: React.FC<GradingDashboardProps> = ({ attempts, quizzes, 
         if (!quiz) return <div>Error: Cuestionario no encontrado</div>;
 
         // Calculate dynamic total as teacher grades
-        const currentTotal = Object.values(gradingAnswers).reduce((a: number, b: number) => a + b, 0);
+        const currentTotal = (Object.values(gradingAnswers) as number[]).reduce((a, b) => a + b, 0);
         const currentGrade = calculateGrade(currentTotal, selectedAttempt.puntaje_total_posible);
 
         return (

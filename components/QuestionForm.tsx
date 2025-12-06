@@ -370,6 +370,19 @@ const QuestionForm: React.FC<QuestionFormProps> = ({ isOpen, onClose, onSave, in
                                      </div>
                                 </div>
                             </div>
+                            
+                            {/* NEW TAGS INPUT */}
+                            <div>
+                                <label className={labelClass}>Etiquetas <span className="text-xs font-normal opacity-70">(Separadas por coma)</span></label>
+                                <input
+                                    type="text"
+                                    name="etiquetas"
+                                    placeholder="Ej: anatomía, fisiología, urgencias"
+                                    value={Array.isArray(question.etiquetas) ? question.etiquetas.join(', ') : question.etiquetas}
+                                    onChange={handleChange}
+                                    className={inputClass}
+                                />
+                            </div>
                         </div>
 
                         {/* CONTENT SECTION */}

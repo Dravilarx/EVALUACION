@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Quiz, Question, QuestionType, Attempt } from '../types';
-import { VideoIcon, LinkIcon, ZoomInIcon, ZoomOutIcon, CloseIcon, RefreshIcon, PencilIcon, MenuIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon, XCircleIcon } from './icons';
+import { VideoIcon, LinkIcon, ZoomInIcon, ZoomOutIcon, CloseIcon, RefreshIcon, PencilIcon, MenuIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon, XCircleIcon, SparklesIcon } from './icons';
 import ImageEditor from './ImageEditor';
 import { calculateGrade, getGradeColor } from '../utils';
 
@@ -192,7 +192,7 @@ const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attemp
                             onClick={() => onSubmit(finalAttempt)}
                             className="px-8 py-3 rounded-lg bg-primary hover:bg-primary-dark font-bold transition-colors text-white"
                         >
-                            Volver al Panel
+                            Aceptar
                         </button>
                     </div>
                 </div>
@@ -220,9 +220,6 @@ const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attemp
                                 isCorrect = (response?.puntaje_obtenido || 0) > 0; 
                                 correctAnswerText = "(Evaluación manual)";
                             }
-
-                            const quizQuestion = quiz.preguntas.find(pq => pq.codigo_pregunta === q.codigo_pregunta);
-                            const maxScore = quizQuestion?.puntaje || 0;
 
                             return (
                                 <div key={q.codigo_pregunta} className={`bg-background p-6 rounded-xl border-l-4 shadow-sm ${isCorrect ? 'border-success' : q.tipo_pregunta === QuestionType.FreeResponse ? 'border-warning' : 'border-danger'}`}>
@@ -262,34 +259,74 @@ const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attemp
                                     {/* FEEDBACK SECTION */}
                                     <div className="mt-4 space-y-4">
                                         {isCorrect ? (
-                                            <div className="bg-success/10 p-4 rounded-lg border border-success/20">
-                                                <p className="text-xs font-bold text-success uppercase tracking-wider mb-2">Retroalimentación</p>
-                                                <p className="text-text-secondary">{q.feedback_correcto}</p>
+                                            <div className="bg-success/10 p-5 rounded-xl border border-success/20">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="mt-1 bg-success/20 p-1.5 rounded text-success">
+                                                        <CheckCircleIcon className="h-5 w-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-success uppercase tracking-wider mb-1">Retroalimentación</p>
+                                                        <p className="text-text-secondary leading-relaxed">{q.feedback_correcto}</p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         ) : (
-                                            <div className="bg-danger/10 p-4 rounded-lg border border-danger/20">
-                                                <p className="text-xs font-bold text-danger uppercase tracking-wider mb-2">Retroalimentación Constructiva</p>
-                                                <p className="text-text-primary mb-2">{q.feedback_incorrecto}</p>
+                                            <div className="bg-danger/5 p-5 rounded-xl border border-danger/20">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="mt-1 bg-danger/20 p-1.5 rounded text-danger">
+                                                        <CloseIcon className="h-5 w-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-danger uppercase tracking-wider mb-1">Análisis de Error</p>
+                                                        <p className="text-text-primary leading-relaxed">{q.feedback_incorrecto}</p>
+                                                    </div>
+                                                </div>
                                                 
                                                 {/* RESOURCES FOR INCORRECT ANSWERS */}
-                                                {((q.adjuntos.links?.length || 0) > 0 || (q.adjuntos.videos?.length || 0) > 0) && (
-                                                    <div className="mt-4 pt-4 border-t border-danger/20">
-                                                        <p className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
-                                                            <LinkIcon className="h-4 w-4 text-accent" /> Material de Estudio Recomendado:
+                                                {((q.adjuntos.links?.length || 0) > 0 || (q.adjuntos.videos?.length || 0) > 0) ? (
+                                                    <div className="mt-5 pt-4 border-t border-danger/10">
+                                                        <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3 flex items-center gap-2">
+                                                            <SparklesIcon className="h-4 w-4 text-accent" /> 
+                                                            Recursos de Refuerzo
                                                         </p>
-                                                        <div className="space-y-2">
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                             {q.adjuntos.videos?.map((video, i) => (
-                                                                <a key={i} href={video} target="_blank" rel="noreferrer" className="block text-xs bg-surface p-2 rounded hover:bg-secondary/20 transition-colors text-accent underline decoration-dashed">
-                                                                    <VideoIcon className="inline h-3 w-3 mr-1" /> Video de Repaso {i + 1}
+                                                                <a key={`vid-${i}`} href={video} target="_blank" rel="noreferrer" 
+                                                                   className="flex items-center gap-3 p-3 rounded-lg bg-surface border border-secondary/20 hover:border-accent/50 hover:bg-accent/5 transition-all group"
+                                                                >
+                                                                    <div className="bg-red-500/10 text-red-500 p-2 rounded-full group-hover:scale-110 transition-transform">
+                                                                        <VideoIcon className="h-4 w-4" />
+                                                                    </div>
+                                                                    <div className="overflow-hidden">
+                                                                        <p className="text-sm font-medium text-text-primary truncate">Video de Repaso {i + 1}</p>
+                                                                        <p className="text-xs text-text-secondary truncate opacity-70">{video}</p>
+                                                                    </div>
                                                                 </a>
                                                             ))}
                                                             {q.adjuntos.links?.map((link, i) => (
-                                                                <a key={i} href={link} target="_blank" rel="noreferrer" className="block text-xs bg-surface p-2 rounded hover:bg-secondary/20 transition-colors text-accent underline decoration-dashed">
-                                                                    <LinkIcon className="inline h-3 w-3 mr-1" /> Recurso Externo {i + 1}
+                                                                <a key={`link-${i}`} href={link} target="_blank" rel="noreferrer" 
+                                                                   className="flex items-center gap-3 p-3 rounded-lg bg-surface border border-secondary/20 hover:border-accent/50 hover:bg-accent/5 transition-all group"
+                                                                >
+                                                                    <div className="bg-blue-500/10 text-blue-500 p-2 rounded-full group-hover:scale-110 transition-transform">
+                                                                        <LinkIcon className="h-4 w-4" />
+                                                                    </div>
+                                                                    <div className="overflow-hidden">
+                                                                        <p className="text-sm font-medium text-text-primary truncate">Material de Lectura {i + 1}</p>
+                                                                        <p className="text-xs text-text-secondary truncate opacity-70">{link}</p>
+                                                                    </div>
                                                                 </a>
                                                             ))}
                                                         </div>
                                                     </div>
+                                                ) : (
+                                                    // Fallback hint based on topic if no specific resources
+                                                    (q.tema || q.subtema) && (
+                                                         <div className="mt-4 pt-3 border-t border-danger/10">
+                                                            <p className="text-xs text-text-secondary">
+                                                                <span className="font-semibold text-accent">Sugerencia:</span> Repasa el tema <span className="italic">"{q.subtema || q.tema}"</span> en tus apuntes.
+                                                            </p>
+                                                        </div>
+                                                    )
                                                 )}
                                             </div>
                                         )}

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Quiz, Question, QuizQuestion } from '../types';
+import { Quiz, Question, QuizQuestion, Subject } from '../types';
 import { CloseIcon, PlusIcon, TrashIcon, SparklesIcon, CheckCircleIcon } from './icons';
 import { ESPECIALIDADES, TIPOS_PREGUNTA } from '../constants';
 
@@ -11,14 +11,15 @@ interface QuizFormProps {
     allQuestions: Question[];
     initialData?: Quiz | null;
     isEditing?: boolean;
+    subjects: Subject[]; // Received subjects
 }
 
-const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestions, initialData, isEditing }) => {
+const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestions, initialData, isEditing, subjects }) => {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [timeLimit, setTimeLimit] = useState(30);
     const [docente, setDocente] = useState('Equipo Docente');
-    const [asignatura, setAsignatura] = useState(ESPECIALIDADES[0]);
+    const [asignatura, setAsignatura] = useState('');
     const [selectedQuestions, setSelectedQuestions] = useState<QuizQuestion[]>([]);
     
     // New state for multi-selection and random
@@ -46,11 +47,12 @@ const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestio
                 setTimeLimit(30);
                 setSelectedQuestions([]);
                 setDocente('Equipo Docente');
-                setAsignatura(ESPECIALIDADES[0]);
+                // Default to first subject if available
+                setAsignatura(subjects.length > 0 ? subjects[0].name : '');
             }
             setCheckedBankQuestions(new Set());
         }
-    }, [initialData, isOpen, isEditing]);
+    }, [initialData, isOpen, isEditing, subjects]);
 
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -210,8 +212,11 @@ const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestio
                         <div className="grid grid-cols-2 gap-4">
                              <input type="text" value={docente} onChange={e => setDocente(e.target.value)} placeholder="Docente creador" className="w-full bg-background border border-secondary/30 rounded p-2" />
                              <select value={asignatura} onChange={e => setAsignatura(e.target.value)} className="w-full bg-background border border-secondary/30 rounded p-2">
-                                 {ESPECIALIDADES.map(e => <option key={e} value={e}>{e}</option>)}
-                                 <option value="Interdisciplinario">Interdisciplinario</option>
+                                 {subjects.length > 0 ? (
+                                     subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)
+                                 ) : (
+                                     <option value="">No hay asignaturas disponibles</option>
+                                 )}
                              </select>
                         </div>
                         
