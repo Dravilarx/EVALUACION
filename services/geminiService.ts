@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question, QuestionType, Alternative } from '../types';
+import { COMPETENCIES_LIST, PRESENTATION_CRITERIA_LIST } from '../constants';
 
 // Per instructions, API key must be obtained from process.env.API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -131,5 +133,118 @@ export const assistWithQuestionCreation = async (
     } catch (error) {
         console.error("Error assisting with AI:", error);
         throw new Error("La asistencia de IA falló. Revisa la consola para más detalles.");
+    }
+};
+
+// --- ACTA FEEDBACK GENERATION ---
+
+interface ActaDataForAI {
+    studentName: string;
+    subjectName: string;
+    finalGrade: number;
+    writtenGrade: number;
+    competencyGrade: number;
+    presentationGrade: number;
+    competencyDetails: Record<number, number>;
+    presentationDetails: Record<number, number>;
+}
+
+export const generateActaFeedback = async (data: ActaDataForAI): Promise<string> => {
+    try {
+        // Map IDs to Text Labels for the AI context
+        const competencySummary = Object.entries(data.competencyDetails).map(([id, score]) => {
+            const criteria = COMPETENCIES_LIST.find(c => c.id === parseInt(id));
+            return `${criteria?.title || 'Competencia'}: ${score}/7`;
+        }).join('\n');
+
+        const presentationSummary = Object.entries(data.presentationDetails).map(([id, score]) => {
+            const criteria = PRESENTATION_CRITERIA_LIST.find(c => c.id === parseInt(id));
+            return `${criteria?.title || 'Criterio Presentación'}: ${score}/7`;
+        }).join('\n');
+
+        const prompt = `
+            Actúa como un Médico Docente Coordinador de una especialidad médica. Debes redactar un comentario de retroalimentación final para el "Acta de Calificación" de un residente.
+            
+            **Datos del Residente:**
+            - Nombre: ${data.studentName}
+            - Asignatura: ${data.subjectName}
+            - Nota Final: ${data.finalGrade.toFixed(1)} (Escala 1.0 a 7.0, Aprobación >= 4.0)
+            
+            **Desglose:**
+            - Evaluación Escrita (Teoría): ${data.writtenGrade?.toFixed(1) || 'N/A'}
+            - Competencias Personales (Actitud/Clínica): ${data.competencyGrade?.toFixed(1) || 'N/A'}
+            - Presentación (Seminario): ${data.presentationGrade?.toFixed(1) || 'N/A'}
+
+            **Detalle de Competencias Evaluadas (1-7):**
+            ${competencySummary}
+
+            **Detalle de Presentación (1-7):**
+            ${presentationSummary}
+
+            **Instrucciones:**
+            1. Escribe un párrafo de feedback formal, constructivo y personalizado.
+            2. Inicia reconociendo el desempeño general (felicitar si es bueno, animar a mejorar si es bajo).
+            3. Menciona explícitamente las fortalezas basándote en los puntajes altos.
+            4. Menciona las áreas de mejora basándote en los puntajes más bajos (si los hay).
+            5. Mantén un tono profesional y académico.
+            6. No uses formato Markdown, solo texto plano.
+            7. Máximo 150 palabras.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                temperature: 0.7,
+            },
+        });
+
+        return response.text || "No se pudo generar el feedback.";
+
+    } catch (error) {
+        console.error("Error generating acta feedback:", error);
+        throw new Error("Error al conectar con el asistente de IA.");
+    }
+};
+
+// --- EVALUATION AUTOFILL (COMPETENCIES / PRESENTATION) ---
+
+export const generateEvaluationScores = async (type: 'competency' | 'presentation', studentName: string): Promise<Record<number, number>> => {
+    try {
+        const isCompetency = type === 'competency';
+        const itemList = isCompetency ? COMPETENCIES_LIST : PRESENTATION_CRITERIA_LIST;
+        const criteriaText = itemList.map(i => `${i.id}: ${i.title} (${i.description})`).join('\n');
+        
+        const prompt = `
+            Actúa como un docente evaluador simulado. Necesito generar puntajes de prueba para una evaluación de ${isCompetency ? 'Competencias Personales' : 'Presentación Clínica'} para el alumno "${studentName}".
+            
+            **Escala de Evaluación:** 1 (Malo/Nunca) a 7 (Excelente/Siempre).
+            
+            **Criterios a Evaluar (ID: Nombre):**
+            ${criteriaText}
+
+            **Instrucciones:**
+            1. Elige ALEATORIAMENTE un perfil de desempeño para este alumno (ej: Sobresaliente, Promedio, o Con Dificultades). No me digas cuál elegiste, solo actúa en consecuencia.
+            2. Genera un puntaje (número entero entre 1 y 7) para cada criterio listado arriba.
+            3. Los puntajes deben ser coherentes con el perfil elegido (ej: si es sobresaliente, la mayoría serán 6 o 7; si tiene dificultades, habrá variabilidad).
+            4. Introduce una pequeña variación natural (no pongas todo 7 o todo 4).
+            
+            Devuelve SOLAMENTE un objeto JSON donde las claves son los IDs (números) y los valores son los puntajes (números). Ejemplo: { "1": 6, "2": 7 ... }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+
+        const jsonStr = response.text.trim();
+        return JSON.parse(jsonStr);
+
+    } catch (error) {
+        console.error("Error generating evaluation scores:", error);
+        throw new Error("Fallo en autocompletado IA.");
     }
 };

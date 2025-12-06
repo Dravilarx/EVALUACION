@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { StudentService, QuizService, AttemptService, CompetencyService, PresentationService, SubjectService, TeacherService, ActaService } from '../services/dataService';
+import { generateActaFeedback } from '../services/geminiService';
 import { Student, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation, Subject, Teacher, Acta } from '../types';
 import GradesTab from './GradesTab';
 import ActasTab from './ActasTab';
-import { RefreshIcon, TableIcon, DocumentTextIcon, CloseIcon, CheckCircleIcon, ChartBarIcon, ScreenIcon, ClipboardCheckIcon } from './icons';
+import { RefreshIcon, TableIcon, DocumentTextIcon, CloseIcon, CheckCircleIcon, ChartBarIcon, ScreenIcon, ClipboardCheckIcon, SparklesIcon } from './icons';
 import { getGradeColor } from '../utils';
 
 interface GradesModuleProps {
@@ -27,6 +28,7 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
     const [isActaModalOpen, setIsActaModalOpen] = useState(false);
     const [actaCandidate, setActaCandidate] = useState<any>(null);
     const [teacherFeedback, setTeacherFeedback] = useState('');
+    const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -67,6 +69,28 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
         setActaCandidate(rowData);
         setTeacherFeedback('');
         setIsActaModalOpen(true);
+    };
+
+    const handleAIFeedback = async () => {
+        if (!actaCandidate) return;
+        setIsGeneratingFeedback(true);
+        try {
+            const feedback = await generateActaFeedback({
+                studentName: actaCandidate.studentName,
+                subjectName: actaCandidate.subjectName,
+                finalGrade: actaCandidate.finalGrade || 0,
+                writtenGrade: actaCandidate.writtenGrade || 0,
+                competencyGrade: actaCandidate.competencyGrade || 0,
+                presentationGrade: actaCandidate.presentationGrade || 0,
+                competencyDetails: actaCandidate.competencyDetails || {},
+                presentationDetails: actaCandidate.presentationDetails || {}
+            });
+            setTeacherFeedback(feedback);
+        } catch (error) {
+            alert("No se pudo generar el feedback con IA. Por favor, inténtelo de nuevo.");
+        } finally {
+            setIsGeneratingFeedback(false);
+        }
     };
 
     const handleConfirmActaGeneration = async () => {
@@ -206,15 +230,26 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
                                 </div>
                             </div>
 
-                            {/* Feedback Input */}
+                            {/* Feedback Input with AI Assist */}
                             <div>
-                                <label className="block text-sm font-bold text-text-primary mb-2">Comentarios y Feedback del Docente</label>
+                                <div className="flex justify-between items-end mb-2">
+                                    <label className="block text-sm font-bold text-text-primary">Comentarios y Feedback del Docente</label>
+                                    <button 
+                                        onClick={handleAIFeedback}
+                                        disabled={isGeneratingFeedback}
+                                        className="flex items-center gap-1.5 text-xs bg-accent/10 text-accent hover:bg-accent hover:text-white px-3 py-1.5 rounded-full transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <SparklesIcon className={`h-4 w-4 ${isGeneratingFeedback ? 'animate-pulse' : ''}`} />
+                                        {isGeneratingFeedback ? "Analizando..." : "Sugerir con IA"}
+                                    </button>
+                                </div>
                                 <textarea 
                                     value={teacherFeedback}
                                     onChange={(e) => setTeacherFeedback(e.target.value)}
-                                    placeholder="Escriba aquí sus observaciones finales sobre el desempeño del residente..."
+                                    placeholder={isGeneratingFeedback ? "La IA está redactando el feedback..." : "Escriba aquí sus observaciones finales sobre el desempeño del residente..."}
                                     rows={4}
-                                    className="w-full bg-background border border-secondary/30 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary text-sm resize-none"
+                                    disabled={isGeneratingFeedback}
+                                    className="w-full bg-background border border-secondary/30 rounded-lg p-3 outline-none focus:ring-2 focus:ring-primary text-sm resize-none disabled:bg-secondary/10 disabled:text-text-secondary"
                                 />
                                 <p className="text-xs text-text-secondary mt-1 text-right">Este comentario será visible para el residente en su acta.</p>
                             </div>
@@ -224,7 +259,8 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
                             <button onClick={() => setIsActaModalOpen(false)} className="px-5 py-2 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors font-medium">Cancelar</button>
                             <button 
                                 onClick={handleConfirmActaGeneration}
-                                className="px-5 py-2 rounded-lg bg-success hover:bg-success/80 text-white font-bold shadow-lg transition-all flex items-center gap-2"
+                                disabled={isGeneratingFeedback}
+                                className="px-5 py-2 rounded-lg bg-success hover:bg-success/80 text-white font-bold shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
                             >
                                 <CheckCircleIcon className="h-5 w-5" /> Confirmar y Generar Acta
                             </button>

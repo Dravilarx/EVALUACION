@@ -1,9 +1,10 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChartBarIcon, CheckCircleIcon, UsersIcon, BookOpenIcon, PlusIcon, XCircleIcon } from './icons';
+import { ChartBarIcon, CheckCircleIcon, UsersIcon, BookOpenIcon, PlusIcon, XCircleIcon, SparklesIcon } from './icons';
 import { COMPETENCIES_LIST, EVALUATION_SCALE } from '../constants';
 import { Student, Subject, CompetencyEvaluation } from '../types';
 import { StudentService, SubjectService, CompetencyService } from '../services/dataService';
+import { generateEvaluationScores } from '../services/geminiService';
 
 interface SurveysModuleProps {
     currentUserId: string;
@@ -23,6 +24,7 @@ const SurveysModule: React.FC<SurveysModuleProps> = ({ currentUserId, initialStu
     const [selectedSubject, setSelectedSubject] = useState('');
     const [scores, setScores] = useState<Record<number, number>>({});
     const [isSaving, setIsSaving] = useState(false);
+    const [isAutoFilling, setIsAutoFilling] = useState(false);
     const [missingItems, setMissingItems] = useState<number[]>([]); // Track missing questions
 
     const isAdmin = currentUserId === 'DOCENTE';
@@ -65,6 +67,25 @@ const SurveysModule: React.FC<SurveysModuleProps> = ({ currentUserId, initialStu
         }));
         // Remove from missing items if it was there
         setMissingItems(prev => prev.filter(id => id !== itemId));
+    };
+
+    const handleAIAutofill = async () => {
+        if (!selectedStudent) {
+            alert("Seleccione un alumno primero.");
+            return;
+        }
+        setIsAutoFilling(true);
+        try {
+            const studentName = getStudentName(selectedStudent);
+            const aiScores = await generateEvaluationScores('competency', studentName);
+            setScores(aiScores);
+            setMissingItems([]); // Clear errors
+        } catch (error) {
+            console.error(error);
+            alert("No se pudo autocompletar con IA.");
+        } finally {
+            setIsAutoFilling(false);
+        }
     };
 
     const average = useMemo(() => {
@@ -250,6 +271,16 @@ const SurveysModule: React.FC<SurveysModuleProps> = ({ currentUserId, initialStu
                             <p className="text-xl font-bold text-text-primary">{progress}%</p>
                         </div>
                         <div className="flex-grow"></div>
+                        
+                        <button 
+                            onClick={handleAIAutofill}
+                            disabled={isAutoFilling || isSaving || !selectedStudent}
+                            className="flex items-center gap-2 bg-accent/10 text-accent hover:bg-accent hover:text-white px-4 py-2 rounded-lg font-bold transition-all mr-2 disabled:opacity-50"
+                        >
+                            <SparklesIcon className={`h-5 w-5 ${isAutoFilling ? 'animate-pulse' : ''}`} />
+                            {isAutoFilling ? 'Generando...' : 'Autocompletar con IA'}
+                        </button>
+
                         <button 
                             onClick={handleSave}
                             disabled={isSaving}

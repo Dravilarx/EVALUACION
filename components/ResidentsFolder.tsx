@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Student, Annotation, Activity, Subject, Quiz, Attempt, Acta, Teacher, SurveyResult } from '../types';
 import { StudentService, AnnotationService, ActivityService, SubjectService, QuizService, AttemptService, ActaService, TeacherService, SurveyService } from '../services/dataService';
-import { AcademicIcon, UsersIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, CheckCircleIcon, XCircleIcon, ClipboardCheckIcon, ClockIcon, PlayIcon, DocumentTextIcon, FileIcon, ArrowUpRightIcon } from './icons';
+import { AcademicIcon, UsersIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, CheckCircleIcon, XCircleIcon, ClipboardCheckIcon, ClockIcon, PlayIcon, DocumentTextIcon, FileIcon, ArrowUpRightIcon, BellIcon } from './icons';
 import { getGradeColor } from '../utils';
 import ActasTab from './ActasTab';
 
@@ -90,7 +90,19 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
         ? surveys.filter(s => s.studentId === selectedStudent.id)
         : [];
 
-    const pendingSurveysCount = studentSurveys.filter(s => s.status === 'Pending').length;
+    // Calculate Pending Items
+    const pendingQuizzes = studentQuizzes.filter(q => {
+        const attempt = attempts.find(a => a.id_cuestionario === q.id_cuestionario && a.alumno_id === selectedStudent?.id);
+        const isCompleted = attempt?.estado === 'entregado' || attempt?.estado === 'pendiente_revision';
+        const isExpired = new Date(q.ventana_disponibilidad.fin) < new Date();
+        return !isCompleted && !isExpired;
+    });
+
+    const pendingActas = studentActas.filter(a => a.status === 'Pendiente');
+    
+    const pendingSurveys = studentSurveys.filter(s => s.status === 'Pending');
+
+    const totalPending = pendingQuizzes.length + pendingActas.length + pendingSurveys.length;
 
     const handleUpdateActa = (updatedActa: Acta) => {
         setActas(prev => prev.map(a => a.id === updatedActa.id ? updatedActa : a));
@@ -100,13 +112,13 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
     const getSubjectName = (id: string) => subjects.find(s => s.id === id)?.name || id;
 
     return (
-        <div className="h-[calc(100vh-100px)] flex flex-col md:flex-row gap-6 animate-fade-in-up">
+        <div className="flex flex-col gap-6 h-[calc(100vh-100px)] animate-fade-in-up">
             
-            {/* Sidebar List - Only show if user is DOCENTE */}
+            {/* Top Selection Panel - Only show if user is DOCENTE */}
             {currentUserId === 'DOCENTE' && (
-                <div className="w-full md:w-1/3 bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-secondary/20 bg-background/50">
-                        <h2 className="text-lg font-bold flex items-center gap-2 mb-3">
+                <div className="w-full bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col flex-shrink-0 max-h-[30vh]">
+                    <div className="p-3 border-b border-secondary/20 bg-background/50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                        <h2 className="text-lg font-bold flex items-center gap-2">
                             <UsersIcon className="h-5 w-5 text-primary" /> Residentes
                         </h2>
                         <input 
@@ -114,21 +126,21 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
                             placeholder="Buscar residente..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-background border border-secondary/30 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
+                            className="w-full sm:w-64 bg-background border border-secondary/30 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary outline-none"
                         />
                     </div>
-                    <div className="flex-grow overflow-y-auto p-2 space-y-1">
-                        {loading ? <p className="text-center p-4 text-text-secondary">Cargando...</p> : 
+                    <div className="overflow-y-auto p-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        {loading ? <p className="col-span-full text-center p-4 text-text-secondary">Cargando...</p> : 
                         filteredStudents.map(student => (
                             <button
                                 key={student.id}
                                 onClick={() => setSelectedStudent(student)}
-                                className={`w-full text-left p-3 rounded-lg flex items-center gap-3 transition-colors ${selectedStudent?.id === student.id ? 'bg-primary text-white shadow-md' : 'hover:bg-secondary/10 text-text-primary'}`}
+                                className={`text-left p-3 rounded-lg flex items-center gap-3 transition-colors border ${selectedStudent?.id === student.id ? 'bg-primary text-white border-primary shadow-md' : 'bg-background hover:bg-secondary/10 text-text-primary border-transparent hover:border-secondary/20'}`}
                             >
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${selectedStudent?.id === student.id ? 'bg-white text-primary' : 'bg-primary/10 text-primary'}`}>
+                                <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-xs ${selectedStudent?.id === student.id ? 'bg-white text-primary' : 'bg-primary/10 text-primary'}`}>
                                     {student.name.charAt(0)}
                                 </div>
-                                <div>
+                                <div className="overflow-hidden">
                                     <p className="text-sm font-bold truncate">{student.name}</p>
                                     <p className={`text-xs truncate ${selectedStudent?.id === student.id ? 'text-white/80' : 'text-text-secondary'}`}>{student.level} • {student.status}</p>
                                 </div>
@@ -138,8 +150,8 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
                 </div>
             )}
 
-            {/* Main Content */}
-            <div className={`w-full ${currentUserId === 'DOCENTE' ? 'md:w-2/3' : 'md:w-full'} bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col overflow-hidden relative`}>
+            {/* Main Content - Full Width Below */}
+            <div className={`w-full flex-grow bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col overflow-hidden relative`}>
                 {selectedStudent ? (
                     <div className="flex flex-col h-full">
                         {/* Header Profile */}
@@ -164,22 +176,23 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
                                     className={`pb-2 px-1 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'evaluations' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                                 >
                                     Evaluaciones (Quiz)
-                                    {studentQuizzes.length > 0 && <span className="bg-primary text-white text-[10px] px-1.5 rounded-full">{studentQuizzes.length}</span>}
+                                    {pendingQuizzes.length > 0 && <span className="bg-danger text-white text-[10px] px-1.5 rounded-full shadow-sm ml-1">{pendingQuizzes.length}</span>}
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('actas')}
                                     className={`pb-2 px-1 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'actas' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                                 >
                                     Actas y Certificados
+                                    {pendingActas.length > 0 && <span className="bg-danger text-white text-[10px] px-1.5 rounded-full shadow-sm ml-1">{pendingActas.length}</span>}
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('surveys')}
                                     className={`pb-2 px-1 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'surveys' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                                 >
                                     Encuestas Docentes
-                                    {pendingSurveysCount > 0 && (
+                                    {pendingSurveys.length > 0 && (
                                         <span className="bg-danger text-white text-[10px] px-1.5 rounded-full animate-pulse shadow-sm">
-                                            {pendingSurveysCount}
+                                            {pendingSurveys.length}
                                         </span>
                                     )}
                                 </button>
@@ -201,6 +214,37 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
                         {/* Content Area */}
                         <div className="flex-grow overflow-y-auto p-6 bg-background/30">
                             
+                            {/* Notification Banner */}
+                            {totalPending > 0 && (
+                                <div className="mb-6 bg-warning/10 border border-warning/30 p-4 rounded-xl flex items-start gap-4 shadow-sm animate-fade-in-down">
+                                    <div className="p-2 bg-warning/20 rounded-full text-warning shrink-0">
+                                        <BellIcon className="h-6 w-6" />
+                                    </div>
+                                    <div className="flex-grow">
+                                        <h4 className="font-bold text-text-primary">
+                                            {selectedStudent.id === currentUserId ? 'Tienes' : 'El residente tiene'} {totalPending} actividad(es) pendiente(s)
+                                        </h4>
+                                        <div className="mt-2 space-y-1">
+                                            {pendingQuizzes.length > 0 && (
+                                                <button onClick={() => setActiveTab('evaluations')} className="block text-xs text-text-secondary hover:text-primary hover:underline text-left">
+                                                    • {pendingQuizzes.length} Evaluación(es) por responder
+                                                </button>
+                                            )}
+                                            {pendingActas.length > 0 && (
+                                                <button onClick={() => setActiveTab('actas')} className="block text-xs text-text-secondary hover:text-primary hover:underline text-left">
+                                                    • {pendingActas.length} Acta(s) pendiente(s) de firma
+                                                </button>
+                                            )}
+                                            {pendingSurveys.length > 0 && (
+                                                <button onClick={() => setActiveTab('surveys')} className="block text-xs text-text-secondary hover:text-primary hover:underline text-left">
+                                                    • {pendingSurveys.length} Encuesta(s) docente(s) pendiente(s)
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* EVALUATIONS (QUIZZES) TAB */}
                             {activeTab === 'evaluations' && (
                                 <>
@@ -287,9 +331,9 @@ const ResidentsFolder: React.FC<ResidentsFolderProps> = ({ currentUserId, onNavi
                                         <h3 className="font-bold text-lg text-text-primary flex items-center gap-2">
                                             <FileIcon className="h-5 w-5 text-warning" /> Encuestas Docentes
                                         </h3>
-                                        {pendingSurveysCount > 0 && (
+                                        {pendingSurveys.length > 0 && (
                                             <span className="bg-warning/20 text-warning border border-warning/30 text-xs px-3 py-1 rounded-full font-bold">
-                                                {pendingSurveysCount} Pendiente(s)
+                                                {pendingSurveys.length} Pendiente(s)
                                             </span>
                                         )}
                                     </div>

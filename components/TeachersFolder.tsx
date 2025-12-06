@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Teacher, Annotation, Activity, Student, Subject, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation } from '../types';
 import { TeacherService, AnnotationService, ActivityService, StudentService, SubjectService, QuizService, AttemptService, CompetencyService, PresentationService } from '../services/dataService';
-import { FolderIcon, BriefcaseIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, ClipboardCheckIcon, ChartBarIcon, ScreenIcon, ArrowUpRightIcon, CheckCircleIcon } from './icons';
+import { FolderIcon, BriefcaseIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, ClipboardCheckIcon, ChartBarIcon, ScreenIcon, ArrowUpRightIcon, CheckCircleIcon, BellIcon } from './icons';
 
 interface TeachersFolderProps {
     currentUserId: string;
@@ -132,12 +132,12 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
 
 
     return (
-        <div className="h-[calc(100vh-100px)] flex flex-col md:flex-row gap-6 animate-fade-in-up">
+        <div className="flex flex-col gap-6 h-[calc(100vh-100px)] animate-fade-in-up">
             
-            {/* Sidebar List */}
-            <div className="w-full md:w-1/3 bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col overflow-hidden">
-                <div className="p-4 border-b border-secondary/20 bg-background/50">
-                    <h2 className="text-lg font-bold flex items-center gap-2 mb-3">
+            {/* Top Selection Panel */}
+            <div className="w-full bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col flex-shrink-0 max-h-[30vh]">
+                <div className="p-3 border-b border-secondary/20 bg-background/50 flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <h2 className="text-lg font-bold flex items-center gap-2">
                         <BriefcaseIcon className="h-5 w-5 text-primary" /> Docentes
                     </h2>
                     <input 
@@ -145,21 +145,21 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                         placeholder="Buscar docente..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-background border border-secondary/30 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
+                        className="w-full sm:w-64 bg-background border border-secondary/30 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary outline-none"
                     />
                 </div>
-                <div className="flex-grow overflow-y-auto p-2 space-y-1">
-                    {loading ? <p className="text-center p-4 text-text-secondary">Cargando...</p> : 
+                <div className="overflow-y-auto p-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {loading ? <p className="col-span-full text-center p-4 text-text-secondary">Cargando...</p> : 
                      filteredTeachers.map(teacher => (
                         <button
                             key={teacher.id}
                             onClick={() => setSelectedTeacher(teacher)}
-                            className={`w-full text-left p-3 rounded-lg flex items-center gap-3 transition-colors ${selectedTeacher?.id === teacher.id ? 'bg-primary text-white shadow-md' : 'hover:bg-secondary/10 text-text-primary'}`}
+                            className={`text-left p-3 rounded-lg flex items-center gap-3 transition-colors border ${selectedTeacher?.id === teacher.id ? 'bg-primary text-white border-primary shadow-md' : 'bg-background hover:bg-secondary/10 text-text-primary border-transparent hover:border-secondary/20'}`}
                         >
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${selectedTeacher?.id === teacher.id ? 'bg-white text-primary' : 'bg-primary/10 text-primary'}`}>
+                            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-xs ${selectedTeacher?.id === teacher.id ? 'bg-white text-primary' : 'bg-primary/10 text-primary'}`}>
                                 {teacher.name.charAt(0)}
                             </div>
-                            <div>
+                            <div className="overflow-hidden">
                                 <p className="text-sm font-bold truncate">{teacher.name}</p>
                                 <p className={`text-xs truncate ${selectedTeacher?.id === teacher.id ? 'text-white/80' : 'text-text-secondary'}`}>{teacher.rank}</p>
                             </div>
@@ -169,7 +169,7 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
             </div>
 
             {/* Main Content */}
-            <div className={`w-full md:w-2/3 bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col overflow-hidden relative`}>
+            <div className={`w-full flex-grow bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col overflow-hidden relative`}>
                 {selectedTeacher ? (
                     <div className="flex flex-col h-full">
                         {/* Header Profile */}
@@ -214,6 +214,25 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                         {/* Content Area */}
                         <div className="flex-grow overflow-y-auto p-6 bg-background/30">
                             
+                            {/* Notification Banner */}
+                            {pendingEvaluations.length > 0 && (
+                                <div className="mb-6 bg-warning/10 border border-warning/30 p-4 rounded-xl flex items-start gap-4 shadow-sm animate-fade-in-down">
+                                    <div className="p-2 bg-warning/20 rounded-full text-warning shrink-0">
+                                        <BellIcon className="h-6 w-6" />
+                                    </div>
+                                    <div className="flex-grow">
+                                        <h4 className="font-bold text-text-primary">
+                                            {selectedTeacher.id === currentUserId ? 'Tienes' : 'El docente tiene'} {pendingEvaluations.length} evaluación(es) pendiente(s)
+                                        </h4>
+                                        <div className="mt-2 space-y-1">
+                                            <button onClick={() => setActiveTab('pending')} className="block text-xs text-text-secondary hover:text-primary hover:underline text-left">
+                                                • Ver evaluaciones pendientes de cierre
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Pending Evaluations Tab */}
                             {activeTab === 'pending' && (
                                 <>
