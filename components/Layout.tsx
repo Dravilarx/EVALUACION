@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
     HomeIcon, 
     BookOpenIcon, 
@@ -20,16 +20,20 @@ import {
     GlobeIcon,
     TableIcon,
     FileIcon,
-    LogOutIcon
+    LogOutIcon,
+    TerminalIcon,
+    ServerIcon,
+    ShieldExclamationIcon,
+    MailIcon // Added
 } from './icons';
-import { Student } from '../types';
+import { Student, UserRole, UserProfile, MODULE_PERMISSIONS } from '../types';
+import { MessageService } from '../services/dataService'; // Import Service
 
 interface LayoutProps {
     children: React.ReactNode;
     activeModule: string;
     setActiveModule: (module: any) => void;
-    currentUser: string;
-    isTeacher: boolean;
+    currentUser: UserProfile;
     students: Student[];
     onLogout: () => void;
     darkMode: boolean;
@@ -43,28 +47,36 @@ const SidebarItem: React.FC<{
     isActive: boolean; 
     isExpanded: boolean; 
     onClick: () => void;
-    disabled?: boolean; 
-}> = ({ icon, label, isActive, isExpanded, onClick, disabled }) => (
+    special?: boolean;
+    badge?: number; // Added badge prop
+}> = ({ icon, label, isActive, isExpanded, onClick, special, badge }) => (
     <button 
-        onClick={!disabled ? onClick : undefined}
-        disabled={disabled}
+        onClick={onClick}
         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative
-        ${disabled 
-            ? 'opacity-30 cursor-not-allowed grayscale text-text-secondary' 
-            : isActive 
+        ${isActive 
                 ? 'bg-primary/10 text-primary font-medium' 
-                : 'text-text-secondary hover:bg-secondary/10 hover:text-text-primary'
+                : special ? 'text-purple-600 hover:bg-purple-50' : 'text-text-secondary hover:bg-secondary/10 hover:text-text-primary'
         }
         ${!isExpanded && 'justify-center'}
         `}
         title={!isExpanded ? label : ''}
     >
-        <div className={`transition-transform duration-200 ${isActive && !disabled ? 'scale-110' : 'group-hover:scale-110'}`}>
-            {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: `h-5 w-5 ${isActive && !disabled ? 'text-primary' : 'currentColor'}` })}
+        <div className={`transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-110'} relative`}>
+            {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { className: `h-5 w-5 ${isActive ? 'text-primary' : 'currentColor'}` })}
+            {!isExpanded && badge && badge > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-danger rounded-full border border-surface"></span>
+            )}
         </div>
-        {isExpanded && <span className="whitespace-nowrap text-sm">{label}</span>}
+        {isExpanded && (
+            <div className="flex justify-between items-center w-full">
+                <span className="whitespace-nowrap text-sm">{label}</span>
+                {badge && badge > 0 && (
+                    <span className="bg-danger text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>
+                )}
+            </div>
+        )}
         
-        {isActive && !disabled && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full"></div>}
+        {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full"></div>}
     </button>
 );
 
@@ -73,7 +85,6 @@ const Layout: React.FC<LayoutProps> = ({
     activeModule, 
     setActiveModule, 
     currentUser, 
-    isTeacher, 
     students,
     onLogout,
     darkMode,
@@ -81,27 +92,37 @@ const Layout: React.FC<LayoutProps> = ({
     onUserChange
 }) => {
     const [isSidebarOpen, setSidebarOpen] = React.useState(true);
-    const userProfile = isTeacher ? { name: "Docente Coordinador", role: "Administrador" } : students.find(s => s.id === currentUser) || { name: "Usuario", role: "Residente" };
+    const [unreadMessages, setUnreadMessages] = useState(0);
 
-    // Helper to determine if a module is accessible based on role
-    // Rules: Residents access: Dashboard, Subjects, Teachers, Residents (List), Residents Folder (Personal), Grades (Personal), Evaluations (Take), Polls, News.
-    const isModuleDisabled = (moduleName: string) => {
-        if (isTeacher) return false; // Teachers access everything
+    // Poll for unread messages
+    useEffect(() => {
+        const checkMessages = async () => {
+            const count = await MessageService.getUnreadCount(currentUser.id);
+            setUnreadMessages(count);
+        };
+        checkMessages();
+        const interval = setInterval(checkMessages, 10000); // Check every 10s
+        return () => clearInterval(interval);
+    }, [currentUser.id]);
+    
+    // Helper to determine if a module is accessible based on role via MATRIX
+    const isModuleAllowed = (moduleName: string) => {
+        const allowedRoles = MODULE_PERMISSIONS[moduleName];
+        if (!allowedRoles) return false; // Block if not defined
+        return allowedRoles.includes(currentUser.activeRole);
+    };
 
-        const allowedForResidents = [
-            'dashboard', 
-            'subjects', 
-            'teachers', 
-            'residents', 
-            'residents_folder', 
-            'grades', 
-            'evaluations', // Essential for taking quizzes
-            'poll',        // Essential for student feedback
-            'news',        // General info
-            'documents'    // General info
-        ];
+    // Helper to check if a section header should be displayed
+    const isSectionVisible = (modulesToCheck: string[]) => {
+        return modulesToCheck.some(m => isModuleAllowed(m));
+    };
 
-        return !allowedForResidents.includes(moduleName);
+    const getRoleBadge = (role: UserRole) => {
+        switch(role) {
+            case 'ADMIN': return 'bg-purple-100 text-purple-700';
+            case 'TEACHER': return 'bg-primary/5 text-primary';
+            case 'RESIDENT': return 'bg-emerald-500/10 text-emerald-600';
+        }
     };
 
     return (
@@ -110,11 +131,11 @@ const Layout: React.FC<LayoutProps> = ({
             <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-surface border-r border-secondary/20 flex flex-col transition-all duration-300 z-30 flex-shrink-0 shadow-sm relative`}>
                 
                 {/* Role Indicator Strip */}
-                <div className={`absolute left-0 top-0 bottom-0 w-1 ${isTeacher ? 'bg-primary' : 'bg-emerald-500'}`}></div>
+                <div className={`absolute left-0 top-0 bottom-0 w-1 ${currentUser.activeRole === 'ADMIN' ? 'bg-purple-600' : currentUser.activeRole === 'TEACHER' ? 'bg-primary' : 'bg-emerald-500'}`}></div>
 
                 <div className="p-4 flex items-center justify-between h-16 border-b border-secondary/20 ml-1">
                     <div className={`flex items-center gap-3 overflow-hidden transition-all ${isSidebarOpen ? 'opacity-100' : 'opacity-0 w-0'}`}>
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-white text-lg shadow-md ${isTeacher ? 'bg-primary shadow-primary/20' : 'bg-emerald-500 shadow-emerald-500/20'}`}>G</div>
+                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-white text-lg shadow-md ${currentUser.activeRole === 'ADMIN' ? 'bg-purple-600' : currentUser.activeRole === 'TEACHER' ? 'bg-primary' : 'bg-emerald-500'}`}>G</div>
                         <span className="text-xl font-bold tracking-tight text-text-primary">GRUA</span>
                     </div>
                     <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-1.5 rounded-md hover:bg-secondary/20 text-text-secondary">
@@ -122,58 +143,88 @@ const Layout: React.FC<LayoutProps> = ({
                     </button>
                 </div>
 
-                <div className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-center transition-colors ${isTeacher ? 'text-primary bg-primary/5' : 'text-emerald-600 bg-emerald-500/10'} mx-3 mt-2 rounded`}>
-                    {isSidebarOpen ? (isTeacher ? 'Modo Docente' : 'Modo Residente') : (isTeacher ? 'D' : 'R')}
+                <div className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-center transition-colors ${getRoleBadge(currentUser.activeRole)} mx-3 mt-2 rounded`}>
+                    {isSidebarOpen ? (
+                        currentUser.activeRole === 'ADMIN' ? 'Administrativo' : currentUser.activeRole === 'TEACHER' ? 'Docente' : 'Residente'
+                    ) : (
+                        currentUser.activeRole.charAt(0)
+                    )}
                 </div>
 
                 <nav className="flex-grow py-4 px-3 space-y-1 overflow-y-auto ml-1">
-                    <SidebarItem icon={<HomeIcon />} label="Inicio" isActive={activeModule === 'dashboard'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('dashboard')} disabled={isModuleDisabled('dashboard')} />
+                    {isModuleAllowed('dashboard') && (
+                        <SidebarItem icon={<HomeIcon />} label="Inicio" isActive={activeModule === 'dashboard'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('dashboard')} />
+                    )}
                     
-                    <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
-                        {isSidebarOpen ? 'Académico' : '•••'}
-                    </div>
+                    {/* System Admin */}
+                    {isSectionVisible(['audit_log', 'admin_panel', 'change_requests']) && (
+                        <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
+                            {isSidebarOpen ? 'Sistema' : '•••'}
+                        </div>
+                    )}
+                    
+                    {isModuleAllowed('audit_log') && <SidebarItem icon={<TerminalIcon />} label="Bitácora" isActive={activeModule === 'audit_log'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('audit_log')} special />}
+                    {isModuleAllowed('admin_panel') && <SidebarItem icon={<ServerIcon />} label="Administración" isActive={activeModule === 'admin_panel'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('admin_panel')} />}
+                    {isModuleAllowed('change_requests') && <SidebarItem icon={<ShieldExclamationIcon />} label="Solicitudes" isActive={activeModule === 'change_requests'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('change_requests')} />}
 
-                    <SidebarItem icon={<BookOpenIcon />} label="Asignaturas" isActive={activeModule === 'subjects'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('subjects')} disabled={isModuleDisabled('subjects')} />
-                    <SidebarItem icon={<BriefcaseIcon />} label="Docentes" isActive={activeModule === 'teachers'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('teachers')} disabled={isModuleDisabled('teachers')} />
-                    <SidebarItem icon={<UsersIcon />} label="Residentes" isActive={activeModule === 'residents'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('residents')} disabled={isModuleDisabled('residents')} />
+                    {/* Academic */}
+                    {isSectionVisible(['subjects', 'teachers', 'residents']) && (
+                        <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
+                            {isSidebarOpen ? 'Académico' : '•••'}
+                        </div>
+                    )}
 
-                    <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
-                        {isSidebarOpen ? 'Evaluaciones' : '•••'}
-                    </div>
+                    {isModuleAllowed('subjects') && <SidebarItem icon={<BookOpenIcon />} label="Asignaturas" isActive={activeModule === 'subjects'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('subjects')} />}
+                    {isModuleAllowed('teachers') && <SidebarItem icon={<BriefcaseIcon />} label="Docentes" isActive={activeModule === 'teachers'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('teachers')} />}
+                    {isModuleAllowed('residents') && <SidebarItem icon={<UsersIcon />} label="Residentes" isActive={activeModule === 'residents'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('residents')} />}
 
-                    <SidebarItem icon={<ChartBarIcon />} label="Competencias Personales" isActive={activeModule === 'surveys'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('surveys')} disabled={isModuleDisabled('surveys')} />
-                    <SidebarItem icon={<ScreenIcon />} label="Presentación" isActive={activeModule === 'presentation'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('presentation')} disabled={isModuleDisabled('presentation')} />
-                    <SidebarItem icon={<ClipboardCheckIcon />} label="Evaluación escrita" isActive={activeModule === 'evaluations'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('evaluations')} disabled={isModuleDisabled('evaluations')} />
-                    <SidebarItem icon={<TableIcon />} label="Libro de Notas" isActive={activeModule === 'grades'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('grades')} disabled={isModuleDisabled('grades')} />
+                    {/* Evaluations */}
+                    {isSectionVisible(['surveys', 'presentation', 'evaluations', 'grades']) && (
+                        <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
+                            {isSidebarOpen ? 'Evaluaciones' : '•••'}
+                        </div>
+                    )}
 
-                    <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
-                        {isSidebarOpen ? 'Gestión' : '•••'}
-                    </div>
+                    {isModuleAllowed('surveys') && <SidebarItem icon={<ChartBarIcon />} label="Competencias Personales" isActive={activeModule === 'surveys'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('surveys')} />}
+                    {isModuleAllowed('presentation') && <SidebarItem icon={<ScreenIcon />} label="Presentación" isActive={activeModule === 'presentation'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('presentation')} />}
+                    {isModuleAllowed('evaluations') && <SidebarItem icon={<ClipboardCheckIcon />} label="Evaluación escrita" isActive={activeModule === 'evaluations'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('evaluations')} />}
+                    {isModuleAllowed('grades') && <SidebarItem icon={<TableIcon />} label="Libro de Notas" isActive={activeModule === 'grades'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('grades')} />}
 
-                    <SidebarItem icon={<AcademicIcon />} label="Carpeta Residentes" isActive={activeModule === 'residents_folder'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('residents_folder')} disabled={isModuleDisabled('residents_folder')} />
-                    <SidebarItem icon={<FolderIcon />} label="Carpeta Docentes" isActive={activeModule === 'teachers_folder'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('teachers_folder')} disabled={isModuleDisabled('teachers_folder')} />
-                    <SidebarItem icon={<ChatBubbleLeftRightIcon />} label="Anotaciones" isActive={activeModule === 'annotations'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('annotations')} disabled={isModuleDisabled('annotations')} />
-                    <SidebarItem icon={<GlobeIcon />} label="Extensión" isActive={activeModule === 'activities'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('activities')} disabled={isModuleDisabled('activities')} />
+                    {/* Management Folders */}
+                    {isSectionVisible(['residents_folder', 'teachers_folder', 'annotations', 'activities']) && (
+                        <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
+                            {isSidebarOpen ? 'Gestión' : '•••'}
+                        </div>
+                    )}
 
-                    <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
-                        {isSidebarOpen ? 'Comunicación' : '•••'}
-                    </div>
+                    {isModuleAllowed('residents_folder') && <SidebarItem icon={<AcademicIcon />} label="Carpeta Residentes" isActive={activeModule === 'residents_folder'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('residents_folder')} />}
+                    {isModuleAllowed('teachers_folder') && <SidebarItem icon={<FolderIcon />} label="Carpeta Docentes" isActive={activeModule === 'teachers_folder'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('teachers_folder')} />}
+                    {isModuleAllowed('annotations') && <SidebarItem icon={<ChatBubbleLeftRightIcon />} label="Anotaciones" isActive={activeModule === 'annotations'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('annotations')} />}
+                    {isModuleAllowed('activities') && <SidebarItem icon={<GlobeIcon />} label="Extensión" isActive={activeModule === 'activities'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('activities')} />}
 
-                    <SidebarItem icon={<NewspaperIcon />} label="Cartelera UA" isActive={activeModule === 'news'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('news')} disabled={isModuleDisabled('news')} />
-                    <SidebarItem icon={<DocumentTextIcon />} label="Documentos" isActive={activeModule === 'documents'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('documents')} disabled={isModuleDisabled('documents')} />
-                    <SidebarItem icon={<FileIcon />} label="Encuesta" isActive={activeModule === 'poll'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('poll')} disabled={isModuleDisabled('poll')} />
+                    {/* Communication */}
+                    {isSectionVisible(['news', 'documents', 'poll', 'messaging']) && (
+                        <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
+                            {isSidebarOpen ? 'Comunicación' : '•••'}
+                        </div>
+                    )}
+
+                    {isModuleAllowed('messaging') && <SidebarItem icon={<MailIcon />} label="Mensajería" isActive={activeModule === 'messaging'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('messaging')} badge={unreadMessages} />}
+                    {isModuleAllowed('news') && <SidebarItem icon={<NewspaperIcon />} label="Cartelera UA" isActive={activeModule === 'news'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('news')} />}
+                    {isModuleAllowed('documents') && <SidebarItem icon={<DocumentTextIcon />} label="Documentos" isActive={activeModule === 'documents'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('documents')} />}
+                    {isModuleAllowed('poll') && <SidebarItem icon={<FileIcon />} label="Encuesta" isActive={activeModule === 'poll'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('poll')} />}
                 </nav>
 
                 <div className="p-4 border-t border-secondary/20 bg-background/50 ml-1">
                     <div className={`flex items-center gap-3 ${!isSidebarOpen && 'justify-center'}`}>
                          {isSidebarOpen ? (
                              <div className="flex-grow overflow-hidden">
-                                 <p className="text-sm font-semibold truncate text-text-primary">{userProfile.name}</p>
-                                 <p className="text-xs text-text-secondary truncate">{(userProfile as any).role}</p>
+                                 <p className="text-sm font-semibold truncate text-text-primary">{currentUser.name}</p>
+                                 <p className="text-xs text-text-secondary truncate">{currentUser.id}</p>
                              </div>
                          ) : (
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-lg ${isTeacher ? 'bg-primary' : 'bg-emerald-500'}`}>
-                                {isTeacher ? 'A' : 'R'}
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-lg ${currentUser.activeRole === 'ADMIN' ? 'bg-purple-600' : currentUser.activeRole === 'TEACHER' ? 'bg-primary' : 'bg-emerald-500'}`}>
+                                {currentUser.activeRole.charAt(0)}
                             </div>
                          )}
                          {isSidebarOpen && (
@@ -197,26 +248,25 @@ const Layout: React.FC<LayoutProps> = ({
                              activeModule === 'dashboard' ? 'Inicio' : 
                              activeModule === 'residents_folder' ? 'Carpeta Residentes' :
                              activeModule === 'teachers_folder' ? 'Carpeta Docentes' :
-                             activeModule === 'residents' ? 'Residentes' :
-                             activeModule === 'news' ? 'Cartelera UA' :
-                             activeModule === 'surveys' ? 'Competencias Personales' :
-                             activeModule === 'presentation' ? 'Presentación' :
-                             activeModule === 'grades' ? 'Libro de Notas' :
-                             activeModule === 'poll' ? 'Encuesta Docente' :
+                             activeModule === 'audit_log' ? 'Bitácora de Auditoría' :
+                             activeModule === 'admin_panel' ? 'Administración' :
+                             activeModule === 'change_requests' ? 'Solicitudes de Cambio' :
+                             activeModule === 'messaging' ? 'Mensajería Interna' :
                              activeModule.replace('_', ' ')}
                         </span>
                     </div>
 
                     <div className="flex items-center gap-4">
                         {/* Dev User Switcher */}
-                        <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors ${isTeacher ? 'bg-primary/5 border-primary/20' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
-                            <UsersIcon className={`h-4 w-4 ${isTeacher ? 'text-primary' : 'text-emerald-600'}`} />
+                        <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors ${currentUser.activeRole === 'ADMIN' ? 'bg-purple-50 border-purple-200' : currentUser.activeRole === 'TEACHER' ? 'bg-primary/5 border-primary/20' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
+                            <UsersIcon className={`h-4 w-4 ${currentUser.activeRole === 'ADMIN' ? 'text-purple-600' : currentUser.activeRole === 'TEACHER' ? 'text-primary' : 'text-emerald-600'}`} />
                             <select 
-                                value={currentUser} 
+                                value={currentUser.id === '10611061' ? 'ADMIN' : currentUser.activeRole === 'TEACHER' ? 'TEACHER' : currentUser.id} 
                                 onChange={(e) => onUserChange(e.target.value)}
                                 className="bg-transparent border-none text-sm text-text-primary focus:ring-0 cursor-pointer outline-none font-medium"
                             >
-                                <option value="DOCENTE">👨‍🏫 Docente Coordinador</option>
+                                <option value="ADMIN">🔒 Marcelo Avila (Admin)</option>
+                                <option value="TEACHER">👨‍🏫 Docente Genérico</option>
                                 <optgroup label="Residentes">
                                     {students.map(s => (
                                         <option key={s.id} value={s.id}>👨‍⚕️ {s.name}</option>

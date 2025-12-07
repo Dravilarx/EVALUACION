@@ -1,8 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BulletinEntry } from '../types';
+import { BulletinEntry, Student } from '../types';
 import { BulletinService } from '../services/dataService';
-import { NewspaperIcon, CalendarIcon, ChevronRightIcon, PlusIcon, EditIcon, TrashIcon, DuplicateIcon, CloseIcon, CloudUploadIcon, PaperClipIcon, LinkIcon, FileIcon, ImageIcon, ClockIcon, LocationIcon } from './icons';
+import { NewspaperIcon, PlusIcon, CalendarIcon, FilterIcon, EditIcon, TrashIcon, CloseIcon, CheckCircleIcon, EyeIcon, UsersIcon, BriefcaseIcon, CloudUploadIcon, PaperClipIcon, LinkIcon, FileIcon, ImageIcon, VideoIcon } from './icons';
+
+interface NewsModuleProps {
+    students: Student[];
+    currentUserId: string;
+}
 
 const emptyEntry: BulletinEntry = {
     id: '',
@@ -11,43 +16,40 @@ const emptyEntry: BulletinEntry = {
     date: new Date().toISOString(),
     summary: '',
     content: '',
-    author: 'Admin',
+    author: '',
     attachments: { images: [], files: [], links: [] },
-    priority: false
+    priority: false,
+    visibility: 'public'
 };
 
-type Tab = 'news' | 'calendar';
-
-const NewsModule: React.FC = () => {
-    const [entries, setEntries] = useState<BulletinEntry[]>([]);
+const NewsModule: React.FC<NewsModuleProps> = ({ students, currentUserId }) => {
+    const [bulletins, setBulletins] = useState<BulletinEntry[]>([]);
+    const [view, setView] = useState<'list' | 'form'>('list');
+    const [editingEntry, setEditingEntry] = useState<BulletinEntry>(emptyEntry);
+    const [filterCategory, setFilterCategory] = useState<string>('');
     const [loading, setLoading] = useState(true);
-    const [isFormOpen, setIsFormOpen] = useState(false);
-    const [currentEntry, setCurrentEntry] = useState<BulletinEntry>(emptyEntry);
-    const [isEditing, setIsEditing] = useState(false);
-    const [activeTab, setActiveTab] = useState<Tab>('news');
-    
-    // Filters
-    const [searchTerm, setSearchTerm] = useState('');
 
-    // Drag & Drop
+    // Attachment States
     const [isDragging, setIsDragging] = useState(false);
+    const [showLinkInput, setShowLinkInput] = useState(false);
+    const [linkUrl, setLinkUrl] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Permission Logic: Admin (10611061) OR Teacher (DOCENTE)
+    const canManage = currentUserId === 'DOCENTE' || currentUserId === '10611061';
+
     useEffect(() => {
-        loadEntries();
+        loadData();
     }, []);
 
-    const loadEntries = async () => {
+    const loadData = async () => {
         setLoading(true);
-        try {
-            const data = await BulletinService.getAll();
-            setEntries(data);
-        } catch (error) {
-            console.error("Failed to load bulletin", error);
-        } finally {
-            setLoading(false);
-        }
+        const data = await BulletinService.getAll();
+        setBulletins(data);
+        setLoading(false);
     };
+
+    // --- ATTACHMENT HANDLERS ---
 
     const fileToBase64 = (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
@@ -60,24 +62,29 @@ const NewsModule: React.FC = () => {
 
     const handleFileSelect = async (files: FileList | null) => {
         if (!files) return;
-        const fileList = Array.from(files);
         
         const newImages: string[] = [];
         const newFiles: { name: string; type: string; data?: string }[] = [];
 
-        for (const file of fileList) {
-            if (file.type.startsWith('image/')) {
-                try {
-                    const base64 = await fileToBase64(file);
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            try {
+                const base64 = await fileToBase64(file);
+                if (file.type.startsWith('image/')) {
                     newImages.push(base64);
-                } catch (e) { console.error("Error processing image", e); }
-            } else {
-                // For non-image files, we store metadata and mocked "upload" state
-                newFiles.push({ name: file.name, type: file.type, data: 'mock_url_or_base64' });
+                } else {
+                    newFiles.push({
+                        name: file.name,
+                        type: file.type,
+                        data: base64
+                    });
+                }
+            } catch (error) {
+                console.error("Error processing file", file.name, error);
             }
         }
 
-        setCurrentEntry(prev => ({
+        setEditingEntry(prev => ({
             ...prev,
             attachments: {
                 ...prev.attachments,
@@ -98,341 +105,405 @@ const NewsModule: React.FC = () => {
         handleFileSelect(e.dataTransfer.files);
     };
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setCurrentEntry(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleAddLink = () => {
-        const url = prompt("Ingrese la URL del enlace:");
-        if (url) {
-            setCurrentEntry(prev => ({
+    const confirmAddLink = () => {
+        if (linkUrl.trim()) {
+            const validUrl = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
+            setEditingEntry(prev => ({
                 ...prev,
-                attachments: { ...prev.attachments, links: [...prev.attachments.links, url] }
+                attachments: {
+                    ...prev.attachments,
+                    links: [...prev.attachments.links, validUrl]
+                }
             }));
+            setLinkUrl('');
+            setShowLinkInput(false);
         }
     };
 
-    const handleRemoveAttachment = (type: 'images' | 'files' | 'links', index: number) => {
-        setCurrentEntry(prev => {
+    const removeAttachment = (type: 'image' | 'file' | 'link', index: number) => {
+        setEditingEntry(prev => {
             const newAttachments = { ...prev.attachments };
-            if (type === 'images') newAttachments.images = newAttachments.images.filter((_, i) => i !== index);
-            if (type === 'files') newAttachments.files = newAttachments.files.filter((_, i) => i !== index);
-            if (type === 'links') newAttachments.links = newAttachments.links.filter((_, i) => i !== index);
+            if (type === 'image') {
+                newAttachments.images = newAttachments.images.filter((_, i) => i !== index);
+            } else if (type === 'file') {
+                newAttachments.files = newAttachments.files.filter((_, i) => i !== index);
+            } else if (type === 'link') {
+                newAttachments.links = newAttachments.links.filter((_, i) => i !== index);
+            }
             return { ...prev, attachments: newAttachments };
         });
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    // --- FORM HANDLERS ---
+
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!editingEntry.title || !editingEntry.content) return;
+
+        const entryToSave = {
+            ...editingEntry,
+            id: editingEntry.id || `NEWS-${Date.now()}`,
+            author: editingEntry.author || (currentUserId === '10611061' ? 'Administración' : 'Docencia'),
+            date: editingEntry.date || new Date().toISOString()
+        };
+
         try {
-            if (isEditing) {
-                await BulletinService.update(currentEntry);
-                setEntries(prev => prev.map(e => e.id === currentEntry.id ? currentEntry : e));
+            if (editingEntry.id) {
+                await BulletinService.update(entryToSave);
+                setBulletins(prev => prev.map(b => b.id === entryToSave.id ? entryToSave : b));
             } else {
-                await BulletinService.create(currentEntry);
-                setEntries(prev => [currentEntry, ...prev]);
+                const created = await BulletinService.create(entryToSave);
+                setBulletins(prev => [created, ...prev]);
             }
-            setIsFormOpen(false);
+            setView('list');
         } catch (error) {
-            console.error("Error saving entry", error);
+            console.error("Error saving bulletin", error);
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm("¿Estás seguro de eliminar esta entrada?")) {
+        if(confirm('¿Eliminar esta publicación?')) {
             await BulletinService.delete(id);
-            setEntries(prev => prev.filter(e => e.id !== id));
+            setBulletins(prev => prev.filter(b => b.id !== id));
         }
     };
 
-    const handleDuplicate = (entry: BulletinEntry) => {
-        const copy = { ...entry, id: '', title: `${entry.title} (Copia)`, date: new Date().toISOString() };
-        setCurrentEntry(copy);
-        setIsEditing(false);
-        setIsFormOpen(true);
+    const handleEdit = (entry: BulletinEntry) => {
+        setEditingEntry(entry);
+        setView('form');
     };
 
-    const openEdit = (entry: BulletinEntry) => {
-        setCurrentEntry(entry);
-        setIsEditing(true);
-        setIsFormOpen(true);
+    const handleNew = () => {
+        setEditingEntry({ ...emptyEntry, date: new Date().toISOString().slice(0, 16) });
+        setView('form');
     };
 
-    const openNew = () => {
-        setCurrentEntry({
-            ...emptyEntry,
-            category: activeTab === 'calendar' ? 'Evento' : 'Noticia' // Default based on tab
-        });
-        setIsEditing(false);
-        setIsFormOpen(true);
-    };
-
-    // Filter Logic
-    const filteredEntries = entries.filter(e => {
-        const matchesSearch = e.title.toLowerCase().includes(searchTerm.toLowerCase()) || e.summary.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        let matchesTab = false;
-        if (activeTab === 'news') {
-            matchesTab = ['Noticia', 'Aviso'].includes(e.category);
-        } else {
-            matchesTab = ['Evento', 'Académico'].includes(e.category);
-        }
-
-        return matchesSearch && matchesTab;
+    const filteredBulletins = bulletins.filter(b => {
+        const categoryMatch = filterCategory ? b.category === filterCategory : true;
+        const roleMatch = canManage ? true : (b.visibility === 'public' || b.visibility === 'residents');
+        return categoryMatch && roleMatch;
     });
 
-    // Sort Logic
-    // News: Newest first
-    // Calendar: Upcoming dates first (Ascending)
-    const sortedEntries = filteredEntries.sort((a, b) => {
-        if (activeTab === 'news') {
-            return new Date(b.date).getTime() - new Date(a.date).getTime();
-        } else {
-            return new Date(a.date).getTime() - new Date(b.date).getTime();
+    const inputClass = "w-full bg-background border border-secondary/30 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none";
+    const labelClass = "block text-xs font-semibold text-text-secondary mb-1";
+
+    const getVisibilityBadge = (visibility: string) => {
+        switch(visibility) {
+            case 'teachers': return <span className="flex items-center gap-1 text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded border border-purple-200"><BriefcaseIcon className="h-3 w-3"/> Solo Docentes</span>;
+            case 'residents': return <span className="flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200"><UsersIcon className="h-3 w-3"/> Solo Residentes</span>;
+            default: return <span className="flex items-center gap-1 text-[10px] bg-secondary/10 text-text-secondary px-2 py-0.5 rounded border border-secondary/20"><EyeIcon className="h-3 w-3"/> Público</span>;
         }
-    });
+    };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-fade-in-up pb-20">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
                     <h2 className="text-3xl font-bold text-text-primary flex items-center gap-2">
-                        {activeTab === 'news' ? <NewspaperIcon className="h-8 w-8 text-primary" /> : <CalendarIcon className="h-8 w-8 text-accent" />}
-                        {activeTab === 'news' ? 'Noticias y Avisos' : 'Agenda Académica'}
+                        <NewspaperIcon className="h-8 w-8 text-primary" /> Noticias y Avisos
                     </h2>
-                    <p className="text-text-secondary">
-                        {activeTab === 'news' ? 'Novedades y comunicados del departamento.' : 'Programación de eventos, congresos y reuniones.'}
-                    </p>
+                    <p className="text-text-secondary">Novedades y comunicados del departamento.</p>
                 </div>
-                <div className="flex gap-2">
-                     <button onClick={openNew} className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition-all">
-                        <PlusIcon className="h-5 w-5" /> 
-                        <span className="hidden sm:inline">Nueva {activeTab === 'news' ? 'Publicación' : 'Actividad'}</span>
-                        <span className="sm:hidden">Nuevo</span>
-                    </button>
+                
+                <div className="flex gap-2 items-center w-full md:w-auto">
+                    {canManage && view === 'list' && (
+                        <button 
+                            onClick={handleNew}
+                            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-bold shadow-lg transition-all flex items-center gap-2"
+                        >
+                            <PlusIcon className="h-5 w-5" /> Nueva Publicación
+                        </button>
+                    )}
+                    {view === 'form' && (
+                        <button 
+                            onClick={() => setView('list')}
+                            className="bg-secondary/10 hover:bg-secondary/20 text-text-primary px-4 py-2 rounded-lg font-bold transition-all"
+                        >
+                            Cancelar
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="border-b border-secondary/20 flex gap-6">
-                <button 
-                    onClick={() => setActiveTab('news')}
-                    className={`pb-3 px-1 font-semibold transition-colors relative ${activeTab === 'news' ? 'text-primary border-b-2 border-primary' : 'text-text-secondary hover:text-text-primary'}`}
-                >
-                    Noticias y Avisos
-                </button>
-                <button 
-                    onClick={() => setActiveTab('calendar')}
-                    className={`pb-3 px-1 font-semibold transition-colors relative ${activeTab === 'calendar' ? 'text-accent border-b-2 border-accent' : 'text-text-secondary hover:text-text-primary'}`}
-                >
-                    Agenda y Eventos
-                </button>
-            </div>
-
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3">
-                <input 
-                    type="text" 
-                    placeholder={activeTab === 'news' ? "Buscar noticia..." : "Buscar evento..."}
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full bg-surface border border-secondary/30 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-            </div>
-
-            {/* Content View */}
-            {activeTab === 'news' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {sortedEntries.map(item => (
-                        <div key={item.id} className="bg-surface rounded-xl shadow-sm border border-secondary/20 p-6 hover:shadow-md transition-all group flex flex-col h-full relative">
-                            <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                <button onClick={() => handleDuplicate(item)} className="p-1 hover:bg-secondary/20 rounded text-text-secondary"><DuplicateIcon className="h-4 w-4" /></button>
-                                <button onClick={() => openEdit(item)} className="p-1 hover:bg-primary/20 rounded text-primary"><EditIcon className="h-4 w-4" /></button>
-                                <button onClick={() => handleDelete(item.id)} className="p-1 hover:bg-danger/20 rounded text-danger"><TrashIcon className="h-4 w-4" /></button>
-                            </div>
-
-                            <div className="flex justify-between items-start mb-3 pr-16">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded 
-                                    ${item.category === 'Aviso' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
-                                    {item.category}
-                                </span>
-                                <span className="text-xs text-text-secondary flex items-center gap-1">
-                                    <CalendarIcon className="h-3 w-3" /> {new Date(item.date).toLocaleDateString()}
-                                </span>
-                            </div>
-
-                            {item.attachments.images.length > 0 && (
-                                <div className="mb-3 rounded-lg overflow-hidden h-32 w-full">
-                                    <img src={item.attachments.images[0]} alt="Cover" className="w-full h-full object-cover" />
-                                </div>
-                            )}
-
-                            <h3 className="text-lg font-bold text-text-primary mb-2">{item.title}</h3>
-                            <p className="text-sm text-text-secondary leading-relaxed mb-4 flex-grow line-clamp-3">{item.summary}</p>
-                            
-                            {(item.attachments.files.length > 0 || item.attachments.links.length > 0) && (
-                                <div className="flex gap-2 mb-4 text-xs text-text-secondary">
-                                    {item.attachments.files.length > 0 && <span className="flex items-center gap-1"><PaperClipIcon className="h-3 w-3"/> {item.attachments.files.length} Archivos</span>}
-                                    {item.attachments.links.length > 0 && <span className="flex items-center gap-1"><LinkIcon className="h-3 w-3"/> {item.attachments.links.length} Enlaces</span>}
-                                </div>
-                            )}
-
-                            <div className="flex items-center text-primary text-sm font-semibold group-hover:underline mt-auto cursor-pointer" onClick={() => openEdit(item)}>
-                                Ver detalles <ChevronRightIcon className="h-4 w-4 ml-1" />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                // Calendar List View
+            {view === 'list' && (
                 <div className="space-y-4">
-                    {sortedEntries.map(item => (
-                        <div key={item.id} className="bg-surface rounded-xl border border-secondary/20 p-4 hover:border-accent transition-all group flex flex-col md:flex-row gap-4 md:items-center relative">
-                             <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 md:static">
-                                <button onClick={() => handleDuplicate(item)} className="p-1 hover:bg-secondary/20 rounded text-text-secondary"><DuplicateIcon className="h-4 w-4" /></button>
-                                <button onClick={() => openEdit(item)} className="p-1 hover:bg-primary/20 rounded text-primary"><EditIcon className="h-4 w-4" /></button>
-                                <button onClick={() => handleDelete(item.id)} className="p-1 hover:bg-danger/20 rounded text-danger"><TrashIcon className="h-4 w-4" /></button>
-                            </div>
+                    {/* Filters */}
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                        <button 
+                            onClick={() => setFilterCategory('')} 
+                            className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors border ${!filterCategory ? 'bg-primary text-white border-primary' : 'bg-surface border-secondary/30 text-text-secondary hover:bg-secondary/10'}`}
+                        >
+                            Todas
+                        </button>
+                        {['Noticia', 'Aviso', 'Evento', 'Académico'].map(cat => (
+                            <button 
+                                key={cat}
+                                onClick={() => setFilterCategory(cat)} 
+                                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors border ${filterCategory === cat ? 'bg-primary text-white border-primary' : 'bg-surface border-secondary/30 text-text-secondary hover:bg-secondary/10'}`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
 
-                            <div className="flex-shrink-0 flex md:flex-col items-center justify-center gap-2 md:gap-0 bg-background/50 rounded-lg p-3 md:w-24 md:h-24 border border-secondary/10">
-                                <span className="text-xs font-bold text-accent uppercase tracking-wider">{new Date(item.date).toLocaleDateString('es-ES', { month: 'short' })}</span>
-                                <span className="text-2xl font-bold text-text-primary">{new Date(item.date).getDate()}</span>
-                                <span className="text-xs text-text-secondary">{new Date(item.date).toLocaleDateString('es-ES', { weekday: 'short' })}</span>
+                    <div className="grid grid-cols-1 gap-4">
+                        {loading ? (
+                            <div className="text-center p-8 text-text-secondary">Cargando noticias...</div>
+                        ) : filteredBulletins.length === 0 ? (
+                            <div className="text-center p-8 border-2 border-dashed border-secondary/20 rounded-xl text-text-secondary">
+                                No hay publicaciones visibles en esta categoría.
                             </div>
+                        ) : (
+                            filteredBulletins.map(item => (
+                                <div key={item.id} className={`bg-surface p-5 rounded-xl shadow-sm border border-secondary/20 hover:shadow-md transition-all ${item.priority ? 'border-l-4 border-l-warning' : ''}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                                item.category === 'Aviso' ? 'bg-orange-100 text-orange-700' : 
+                                                item.category === 'Evento' ? 'bg-purple-100 text-purple-700' :
+                                                'bg-blue-100 text-blue-700'
+                                            }`}>
+                                                {item.category}
+                                            </span>
+                                            {/* Visibility Badge */}
+                                            {canManage && getVisibilityBadge(item.visibility)}
+                                            
+                                            <span className="text-xs text-text-secondary flex items-center gap-1">
+                                                <CalendarIcon className="h-3 w-3" /> {new Date(item.date).toLocaleDateString()}
+                                            </span>
+                                        </div>
+                                        {canManage && (
+                                            <div className="flex gap-1">
+                                                <button onClick={() => handleEdit(item)} className="p-1.5 hover:bg-secondary/10 rounded text-primary"><EditIcon className="h-4 w-4" /></button>
+                                                <button onClick={() => handleDelete(item.id)} className="p-1.5 hover:bg-secondary/10 rounded text-danger"><TrashIcon className="h-4 w-4" /></button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <h3 className="text-lg font-bold text-text-primary mb-2">{item.title}</h3>
+                                    <p className="text-sm text-text-secondary mb-3">{item.summary}</p>
+                                    
+                                    {/* Preview Content */}
+                                    <div className="p-3 bg-background rounded-lg text-sm text-text-primary border border-secondary/10 whitespace-pre-wrap">
+                                        {item.content}
+                                    </div>
 
-                            <div className="flex-grow">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded 
-                                        ${item.category === 'Académico' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-teal-700'}`}>
-                                        {item.category}
-                                    </span>
-                                    <span className="text-xs text-text-secondary flex items-center gap-1">
-                                        <ClockIcon className="h-3 w-3" /> {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                    </span>
+                                    {/* Attachments Preview */}
+                                    {(item.attachments.images.length > 0 || item.attachments.files.length > 0 || item.attachments.links.length > 0) && (
+                                        <div className="mt-3 flex gap-2 flex-wrap">
+                                            {item.attachments.images.map((_, i) => <span key={i} className="text-xs bg-secondary/10 px-2 py-1 rounded flex items-center gap-1"><ImageIcon className="h-3 w-3"/> Imagen</span>)}
+                                            {item.attachments.files.map((_, i) => <span key={i} className="text-xs bg-secondary/10 px-2 py-1 rounded flex items-center gap-1"><FileIcon className="h-3 w-3"/> Archivo</span>)}
+                                            {item.attachments.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noreferrer" className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded flex items-center gap-1 hover:underline"><LinkIcon className="h-3 w-3"/> Link</a>)}
+                                        </div>
+                                    )}
+
+                                    {item.priority && (
+                                        <div className="mt-3 flex items-center gap-1 text-xs font-bold text-warning">
+                                            <FilterIcon className="h-3 w-3" /> Publicación Prioritaria
+                                        </div>
+                                    )}
                                 </div>
-                                <h3 className="text-lg font-bold text-text-primary">{item.title}</h3>
-                                <p className="text-sm text-text-secondary mt-1">{item.summary}</p>
-                                <div className="flex gap-4 mt-2 text-xs text-text-secondary">
-                                    <span className="flex items-center gap-1"><LocationIcon className="h-3 w-3"/> Auditorio / Online</span>
-                                    {item.attachments.links.length > 0 && <span className="flex items-center gap-1 text-accent"><LinkIcon className="h-3 w-3"/> Link Reunión</span>}
-                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {view === 'form' && (
+                <div className="bg-surface rounded-xl shadow-lg border border-secondary/20 overflow-hidden max-w-3xl mx-auto">
+                    <header className="p-5 border-b border-secondary/20 bg-secondary/5">
+                        <h3 className="font-bold text-lg text-text-primary">
+                            {editingEntry.id ? 'Editar Publicación' : 'Nueva Publicación'}
+                        </h3>
+                    </header>
+                    
+                    <form onSubmit={handleSave} className="p-6 space-y-4">
+                        {/* Title */}
+                        <div>
+                            <label className={labelClass}>Título</label>
+                            <input 
+                                type="text" 
+                                value={editingEntry.title} 
+                                onChange={e => setEditingEntry({...editingEntry, title: e.target.value})} 
+                                className={inputClass} 
+                                placeholder="Título del comunicado"
+                                required 
+                            />
+                        </div>
+                        
+                        {/* Metadata Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className={labelClass}>Categoría</label>
+                                <select 
+                                    value={editingEntry.category}
+                                    onChange={e => setEditingEntry({...editingEntry, category: e.target.value as any})}
+                                    className={inputClass}
+                                >
+                                    <option value="Noticia">Noticia</option>
+                                    <option value="Aviso">Aviso</option>
+                                    <option value="Evento">Evento</option>
+                                    <option value="Académico">Académico</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={labelClass}>Visibilidad</label>
+                                <select 
+                                    value={editingEntry.visibility}
+                                    onChange={e => setEditingEntry({...editingEntry, visibility: e.target.value as any})}
+                                    className={inputClass}
+                                >
+                                    <option value="public">Todos (Público)</option>
+                                    <option value="teachers">Solo Docentes</option>
+                                    <option value="residents">Solo Residentes</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={labelClass}>Fecha</label>
+                                <input 
+                                    type="datetime-local" 
+                                    value={editingEntry.date.slice(0, 16)} 
+                                    onChange={e => setEditingEntry({...editingEntry, date: new Date(e.target.value).toISOString()})} 
+                                    className={inputClass} 
+                                />
                             </div>
                         </div>
-                    ))}
-                </div>
-            )}
 
-            {sortedEntries.length === 0 && (
-                <div className="text-center py-12 text-text-secondary opacity-60">
-                    <NewspaperIcon className="h-12 w-12 mx-auto mb-2" />
-                    <p>No hay publicaciones en esta sección.</p>
-                </div>
-            )}
+                        {/* Summary */}
+                        <div>
+                            <label className={labelClass}>Resumen (Bajada)</label>
+                            <input 
+                                type="text" 
+                                value={editingEntry.summary} 
+                                onChange={e => setEditingEntry({...editingEntry, summary: e.target.value})} 
+                                className={inputClass} 
+                                placeholder="Breve descripción para la vista previa"
+                            />
+                        </div>
 
-            {/* Modal */}
-            {isFormOpen && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-secondary/20">
-                        <header className="p-5 border-b border-secondary/20 flex justify-between items-center bg-surface/95 rounded-t-xl">
-                            <h3 className="text-xl font-bold text-text-primary">
-                                {isEditing ? 'Editar Publicación' : activeTab === 'news' ? 'Nueva Noticia' : 'Nuevo Evento'}
-                            </h3>
-                            <button onClick={() => setIsFormOpen(false)} className="p-2 rounded-full hover:bg-secondary/20"><CloseIcon /></button>
-                        </header>
-                        
-                        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-text-secondary mb-1">Título</label>
-                                    <input type="text" name="title" value={currentEntry.title} onChange={handleInputChange} className="w-full bg-background border border-secondary/30 rounded-lg p-2" required />
+                        {/* Content Area with Drag & Drop */}
+                        <div 
+                            className={`relative space-y-2 rounded-xl p-1 transition-all ${isDragging ? 'ring-2 ring-primary bg-primary/5' : ''}`}
+                            onDragEnter={(e) => handleDrag(e, true)}
+                            onDragLeave={(e) => handleDrag(e, false)}
+                            onDragOver={(e) => handleDrag(e, true)}
+                            onDrop={handleDrop}
+                        >
+                            <label className={labelClass}>Contenido Detallado</label>
+                            <textarea 
+                                value={editingEntry.content} 
+                                onChange={e => setEditingEntry({...editingEntry, content: e.target.value})} 
+                                className={`${inputClass} min-h-[150px] resize-none`} 
+                                placeholder="Escribe el mensaje aquí o arrastra archivos para adjuntar..."
+                                required 
+                            />
+
+                            {isDragging && (
+                                <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-xl flex items-center justify-center z-10 pointer-events-none">
+                                    <div className="bg-surface p-4 rounded-lg shadow-lg flex flex-col items-center">
+                                        <CloudUploadIcon className="h-8 w-8 text-primary mb-2" />
+                                        <span className="font-bold text-primary">Soltar archivos aquí</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-text-secondary mb-1">Categoría</label>
-                                    <select name="category" value={currentEntry.category} onChange={handleInputChange} className="w-full bg-background border border-secondary/30 rounded-lg p-2">
-                                        <option value="Noticia">Noticia</option>
-                                        <option value="Aviso">Aviso</option>
-                                        <option value="Evento">Evento</option>
-                                        <option value="Académico">Académico</option>
-                                    </select>
-                                </div>
-                            </div>
+                            )}
 
-                            <div>
-                                <label className="block text-xs font-bold text-text-secondary mb-1">Fecha {activeTab === 'calendar' ? 'y Hora del Evento' : 'de Publicación'}</label>
-                                <input type="datetime-local" name="date" value={currentEntry.date.slice(0, 16)} onChange={handleInputChange} className="w-full bg-background border border-secondary/30 rounded-lg p-2" required />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-text-secondary mb-1">Resumen (Corto)</label>
-                                <textarea name="summary" value={currentEntry.summary} onChange={handleInputChange} rows={2} className="w-full bg-background border border-secondary/30 rounded-lg p-2 resize-none" maxLength={200} required />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-text-secondary mb-1">Contenido Detallado</label>
-                                <textarea name="content" value={currentEntry.content} onChange={handleInputChange} rows={6} className="w-full bg-background border border-secondary/30 rounded-lg p-2" required />
-                            </div>
-
-                            {/* Attachments Section */}
-                            <div className="border-t border-secondary/20 pt-4">
-                                <h4 className="text-sm font-bold text-accent mb-3 flex items-center gap-2"><PaperClipIcon /> Adjuntos y Multimedia</h4>
-                                
-                                <div 
-                                    className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${isDragging ? 'border-primary bg-primary/5' : 'border-secondary/30 hover:border-primary/50'}`}
-                                    onDragEnter={(e) => handleDrag(e, true)}
-                                    onDragLeave={(e) => handleDrag(e, false)}
-                                    onDragOver={(e) => handleDrag(e, true)}
-                                    onDrop={handleDrop}
-                                    onClick={() => fileInputRef.current?.click()}
+                            {/* Attachments Toolbar */}
+                            <div className="flex gap-2 items-center pt-2">
+                                <input 
+                                    type="file" 
+                                    multiple 
+                                    ref={fileInputRef} 
+                                    className="hidden" 
+                                    onChange={(e) => handleFileSelect(e.target.files)} 
+                                />
+                                <button 
+                                    type="button" 
+                                    onClick={() => fileInputRef.current?.click()} 
+                                    className="p-2 text-text-secondary hover:bg-secondary/10 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold border border-secondary/20"
                                 >
-                                    <CloudUploadIcon className="h-8 w-8 mx-auto text-secondary mb-2" />
-                                    <p className="text-sm text-text-secondary">Arrastra imágenes o archivos aquí (PDF, Doc, JPG)</p>
-                                    <input type="file" multiple ref={fileInputRef} className="hidden" onChange={(e) => handleFileSelect(e.target.files)} />
-                                </div>
-
-                                <button type="button" onClick={handleAddLink} className="text-sm text-primary hover:underline mt-2 flex items-center gap-1 font-semibold">
-                                    <PlusIcon className="h-3 w-3" /> Añadir Enlace Externo
+                                    <PaperClipIcon className="h-4 w-4" /> Adjuntar Archivo
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowLinkInput(!showLinkInput)}
+                                    className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold border border-secondary/20 ${showLinkInput ? 'bg-primary/10 text-primary border-primary/30' : 'text-text-secondary hover:bg-secondary/10'}`}
+                                >
+                                    <LinkIcon className="h-4 w-4" /> Agregar Link
                                 </button>
 
-                                {/* Attachments List */}
-                                <div className="mt-4 space-y-2">
-                                    {currentEntry.attachments.images.map((img, i) => (
-                                        <div key={`img-${i}`} className="flex items-center justify-between p-2 bg-background rounded border border-secondary/20">
-                                            <div className="flex items-center gap-2">
-                                                <ImageIcon className="text-accent h-4 w-4" />
-                                                <span className="text-xs truncate max-w-[200px]">Imagen {i + 1}</span>
-                                                <img src={img} className="h-6 w-6 object-cover rounded" alt="Thumb" />
-                                            </div>
-                                            <button type="button" onClick={() => handleRemoveAttachment('images', i)} className="text-danger"><TrashIcon className="h-4 w-4" /></button>
-                                        </div>
-                                    ))}
-                                    {currentEntry.attachments.files.map((file, i) => (
-                                        <div key={`file-${i}`} className="flex items-center justify-between p-2 bg-background rounded border border-secondary/20">
-                                            <div className="flex items-center gap-2">
-                                                <FileIcon className="text-gray-500 h-4 w-4" />
-                                                <span className="text-xs truncate">{file.name}</span>
-                                            </div>
-                                            <button type="button" onClick={() => handleRemoveAttachment('files', i)} className="text-danger"><TrashIcon className="h-4 w-4" /></button>
-                                        </div>
-                                    ))}
-                                    {currentEntry.attachments.links.map((link, i) => (
-                                        <div key={`link-${i}`} className="flex items-center justify-between p-2 bg-background rounded border border-secondary/20">
-                                            <div className="flex items-center gap-2">
-                                                <LinkIcon className="text-blue-500 h-4 w-4" />
-                                                <span className="text-xs truncate max-w-[300px] text-blue-500">{link}</span>
-                                            </div>
-                                            <button type="button" onClick={() => handleRemoveAttachment('links', i)} className="text-danger"><TrashIcon className="h-4 w-4" /></button>
-                                        </div>
-                                    ))}
-                                </div>
+                                {showLinkInput && (
+                                    <div className="flex items-center gap-2 flex-grow animate-fade-in-right">
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            placeholder="Pegar URL aquí..."
+                                            value={linkUrl}
+                                            onChange={(e) => setLinkUrl(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') { e.preventDefault(); confirmAddLink(); }
+                                            }}
+                                            className="flex-grow bg-background border border-secondary/30 rounded px-2 py-1 text-sm outline-none focus:border-primary h-8"
+                                        />
+                                        <button type="button" onClick={confirmAddLink} className="p-1 text-success hover:bg-success/10 rounded"><CheckCircleIcon className="h-4 w-4" /></button>
+                                        <button type="button" onClick={() => setShowLinkInput(false)} className="p-1 text-danger hover:bg-danger/10 rounded"><CloseIcon className="h-4 w-4" /></button>
+                                    </div>
+                                )}
                             </div>
-                        </form>
 
-                        <footer className="p-5 border-t border-secondary/20 bg-surface/95 rounded-b-xl flex justify-end gap-3">
-                            <button onClick={() => setIsFormOpen(false)} className="px-5 py-2 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors">Cancelar</button>
-                            <button onClick={handleSubmit} className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-lg transition-all">Guardar</button>
-                        </footer>
-                    </div>
+                            {/* Attachments List */}
+                            <div className="flex flex-wrap gap-2 pt-2">
+                                {editingEntry.attachments.images.map((img, idx) => (
+                                    <div key={`img-${idx}`} className="relative group w-20 h-20 rounded-lg overflow-hidden border border-secondary/20">
+                                        <img src={img} alt="attachment" className="w-full h-full object-cover" />
+                                        <button type="button" onClick={() => removeAttachment('image', idx)} className="absolute top-1 right-1 bg-danger text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><CloseIcon className="h-3 w-3"/></button>
+                                    </div>
+                                ))}
+                                {editingEntry.attachments.files.map((file, idx) => (
+                                    <div key={`file-${idx}`} className="relative group bg-background border border-secondary/20 rounded-lg p-2 flex items-center gap-2 max-w-[200px]">
+                                        <FileIcon className="h-5 w-5 text-secondary" />
+                                        <span className="text-xs truncate flex-grow">{file.name}</span>
+                                        <button type="button" onClick={() => removeAttachment('file', idx)} className="text-danger opacity-0 group-hover:opacity-100"><CloseIcon className="h-4 w-4"/></button>
+                                    </div>
+                                ))}
+                                {editingEntry.attachments.links.map((link, idx) => (
+                                    <div key={`link-${idx}`} className="relative group bg-blue-50 border border-blue-100 rounded-lg p-2 flex items-center gap-2 max-w-[200px]">
+                                        <LinkIcon className="h-4 w-4 text-blue-500" />
+                                        <span className="text-xs truncate text-blue-700 flex-grow">{link}</span>
+                                        <button type="button" onClick={() => removeAttachment('link', idx)} className="text-danger opacity-0 group-hover:opacity-100"><CloseIcon className="h-4 w-4"/></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Priority Toggle */}
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id="priority"
+                                checked={editingEntry.priority}
+                                onChange={e => setEditingEntry({...editingEntry, priority: e.target.checked})}
+                                className="rounded text-primary focus:ring-primary h-4 w-4"
+                            />
+                            <label htmlFor="priority" className="text-sm font-bold text-text-secondary cursor-pointer">Marcar como Prioritario</label>
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="pt-4 flex justify-end gap-3 border-t border-secondary/10 mt-4">
+                            <button 
+                                type="button" 
+                                onClick={() => setView('list')}
+                                className="px-5 py-2 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors font-bold text-text-secondary"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                type="submit"
+                                className="bg-primary hover:bg-primary-dark text-white px-6 py-2 rounded-lg font-bold shadow-lg transition-all"
+                            >
+                                Guardar Publicación
+                            </button>
+                        </div>
+                    </form>
                 </div>
             )}
         </div>

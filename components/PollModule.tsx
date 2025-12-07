@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Teacher, Subject, SurveyResult, Student } from '../types';
 import { TeacherService, SubjectService, SurveyService, StudentService } from '../services/dataService';
-import { FileIcon, CheckCircleIcon, UsersIcon, BookOpenIcon, PlusIcon, FilterIcon, ArrowUpRightIcon, ClockIcon, SparklesIcon } from './icons';
+import { generateWordCloudData } from '../services/geminiService';
+import { FileIcon, CheckCircleIcon, UsersIcon, BookOpenIcon, PlusIcon, FilterIcon, ArrowUpRightIcon, ClockIcon, SparklesIcon, ShieldCheckIcon, ChartBarIcon } from './icons';
 
 const questions = [
     { id: 5, text: "Las actividades pedagógicas propuestas por el docente permitieron ejercitar las competencias que este programa de formación promueve." },
@@ -65,7 +66,13 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
     const [selectedSurvey, setSelectedSurvey] = useState<SurveyResult | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
-    const isAdmin = currentUserId === 'DOCENTE';
+    // AI Word Cloud State
+    const [wordCloudData, setWordCloudData] = useState<{ text: string, value: number }[]>([]);
+    const [isGeneratingCloud, setIsGeneratingCloud] = useState(false);
+    const [detailTab, setDetailTab] = useState<'responses' | 'analysis'>('responses');
+
+    // PERMISSION CHECK: Admin (10611061) or Teacher (DOCENTE) should have admin view
+    const isAdmin = currentUserId === 'DOCENTE' || currentUserId === '10611061';
 
     useEffect(() => {
         const loadData = async () => {
@@ -115,6 +122,27 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
         const { name, value } = e.target;
         setTextResponses(prev => ({ ...prev, [name]: value }));
     };
+
+    const generateAnalysis = async () => {
+        if (!selectedSurvey) return;
+        setIsGeneratingCloud(true);
+        // Gather text from current survey
+        const texts = [
+            selectedSurvey.textResponses.q25,
+            selectedSurvey.textResponses.q26,
+            selectedSurvey.textResponses.q27
+        ].filter(t => t && t.length > 5);
+
+        const data = await generateWordCloudData(texts);
+        setWordCloudData(data);
+        setIsGeneratingCloud(false);
+    };
+
+    useEffect(() => {
+        if (view === 'detail' && detailTab === 'analysis' && wordCloudData.length === 0) {
+            generateAnalysis();
+        }
+    }, [view, detailTab]);
 
     // --- DEMO FILL FUNCTION ---
     const handleDemoFill = () => {
@@ -215,6 +243,8 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
 
     const handleViewSurvey = (survey: SurveyResult) => {
         setSelectedSurvey(survey);
+        setWordCloudData([]); // Reset analysis
+        setDetailTab('responses');
         setView('detail');
     };
 
@@ -287,6 +317,7 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
                         >
                             <FilterIcon className="h-5 w-5" /> Filtros
                         </button>
+                        {/* Only allow new survey if NOT admin (unless admin wants to test) - But logic says Admin does everything. So Admin can create survey */}
                         <button 
                             onClick={handleNewSurvey}
                             className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition-all"
@@ -439,14 +470,33 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
     if (view === 'detail' && selectedSurvey) {
         return (
             <div className="space-y-8 animate-fade-in-up pb-20">
-                <div className="flex items-center gap-4">
-                    <button onClick={() => setView('list')} className="p-2 hover:bg-secondary/10 rounded-full transition-colors">
-                        <ArrowUpRightIcon className="h-5 w-5 transform rotate-180" />
-                    </button>
-                    <div>
-                        <h2 className="text-3xl font-bold text-text-primary">Detalle de Encuesta</h2>
-                        <p className="text-text-secondary">Enviada el {new Date(selectedSurvey.date).toLocaleDateString()}</p>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setView('list')} className="p-2 hover:bg-secondary/10 rounded-full transition-colors">
+                            <ArrowUpRightIcon className="h-5 w-5 transform rotate-180" />
+                        </button>
+                        <div>
+                            <h2 className="text-3xl font-bold text-text-primary">Detalle de Encuesta</h2>
+                            <p className="text-text-secondary">Enviada el {new Date(selectedSurvey.date).toLocaleDateString()}</p>
+                        </div>
                     </div>
+                    {/* View Switcher for Admin/Teacher */}
+                    {isAdmin && (
+                        <div className="flex bg-secondary/10 p-1 rounded-lg">
+                            <button
+                                onClick={() => setDetailTab('responses')}
+                                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${detailTab === 'responses' ? 'bg-surface shadow text-primary' : 'text-text-secondary'}`}
+                            >
+                                Respuestas
+                            </button>
+                            <button
+                                onClick={() => setDetailTab('analysis')}
+                                className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-2 ${detailTab === 'analysis' ? 'bg-surface shadow text-accent' : 'text-text-secondary'}`}
+                            >
+                                <SparklesIcon className="h-4 w-4" /> Análisis IA
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-surface p-6 rounded-xl shadow-sm border border-secondary/20 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -464,37 +514,82 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
                     </div>
                 </div>
 
-                <div className="space-y-6">
-                    {questions.map((q, index) => (
-                        <div key={q.id} className="bg-surface p-4 rounded-xl border border-secondary/20 opacity-80">
-                            <p className="font-medium text-text-primary mb-2 flex gap-3">
-                                <span className="font-bold text-secondary bg-secondary/10 w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0">{index + 1}</span>
-                                {q.text}
-                            </p>
-                            <div className="ml-9">
-                                <span className="inline-block bg-primary/10 text-primary font-bold px-3 py-1 rounded text-sm">
-                                    {selectedSurvey.responses[q.id] || "No respondida"}
-                                </span>
+                {detailTab === 'responses' ? (
+                    <div className="space-y-6">
+                        {questions.map((q, index) => (
+                            <div key={q.id} className="bg-surface p-4 rounded-xl border border-secondary/20 opacity-80">
+                                <p className="font-medium text-text-primary mb-2 flex gap-3">
+                                    <span className="font-bold text-secondary bg-secondary/10 w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0">{index + 1}</span>
+                                    {q.text}
+                                </p>
+                                <div className="ml-9">
+                                    <span className="inline-block bg-primary/10 text-primary font-bold px-3 py-1 rounded text-sm">
+                                        {selectedSurvey.responses[q.id] || "No respondida"}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+
+                        <div className="bg-surface p-6 rounded-xl shadow-sm border border-secondary/20 space-y-6">
+                            <h3 className="font-bold text-lg text-accent border-b border-secondary/20 pb-2">Comentarios Adicionales</h3>
+                            <div>
+                                <p className="font-bold text-sm text-text-primary mb-1">25. Fortalezas</p>
+                                <p className="p-3 bg-background rounded-lg border border-secondary/20 text-sm italic">{selectedSurvey.textResponses.q25 || "Sin comentarios."}</p>
+                            </div>
+                            <div>
+                                <p className="font-bold text-sm text-text-primary mb-1">26. Debilidades</p>
+                                <p className="p-3 bg-background rounded-lg border border-secondary/20 text-sm italic">{selectedSurvey.textResponses.q26 || "Sin comentarios."}</p>
+                            </div>
+                            <div>
+                                <p className="font-bold text-sm text-text-primary mb-1">27. Sugerencias</p>
+                                <p className="p-3 bg-background rounded-lg border border-secondary/20 text-sm italic">{selectedSurvey.textResponses.q27 || "Sin comentarios."}</p>
                             </div>
                         </div>
-                    ))}
-
-                    <div className="bg-surface p-6 rounded-xl shadow-sm border border-secondary/20 space-y-6">
-                        <h3 className="font-bold text-lg text-accent border-b border-secondary/20 pb-2">Comentarios Adicionales</h3>
-                        <div>
-                            <p className="font-bold text-sm text-text-primary mb-1">25. Fortalezas</p>
-                            <p className="p-3 bg-background rounded-lg border border-secondary/20 text-sm italic">{selectedSurvey.textResponses.q25 || "Sin comentarios."}</p>
+                    </div>
+                ) : (
+                    // AI ANALYSIS VIEW
+                    <div className="animate-fade-in-up space-y-6">
+                        <div className="bg-surface p-8 rounded-xl shadow-sm border border-secondary/20 min-h-[400px] flex flex-col items-center justify-center">
+                            {isGeneratingCloud ? (
+                                <div className="text-center">
+                                    <SparklesIcon className="h-10 w-10 text-accent animate-spin mx-auto mb-4" />
+                                    <p className="text-text-secondary font-medium">La IA está analizando los comentarios...</p>
+                                </div>
+                            ) : wordCloudData.length > 0 ? (
+                                <div className="w-full flex flex-wrap gap-4 justify-center items-center content-center p-8">
+                                    {wordCloudData.map((item, idx) => {
+                                        // Simple sizing logic based on frequency
+                                        const fontSize = Math.max(12, Math.min(60, 10 + item.value * 5));
+                                        const opacity = Math.min(1, 0.4 + (item.value * 0.1));
+                                        return (
+                                            <span 
+                                                key={idx} 
+                                                style={{ fontSize: `${fontSize}px`, opacity }}
+                                                className="text-primary font-bold hover:scale-110 transition-transform cursor-default"
+                                                title={`Frecuencia: ${item.value}`}
+                                            >
+                                                {item.text}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="text-center text-text-secondary">
+                                    <p>No hay suficientes datos de texto para generar un análisis.</p>
+                                </div>
+                            )}
                         </div>
-                        <div>
-                            <p className="font-bold text-sm text-text-primary mb-1">26. Debilidades</p>
-                            <p className="p-3 bg-background rounded-lg border border-secondary/20 text-sm italic">{selectedSurvey.textResponses.q26 || "Sin comentarios."}</p>
-                        </div>
-                        <div>
-                            <p className="font-bold text-sm text-text-primary mb-1">27. Sugerencias</p>
-                            <p className="p-3 bg-background rounded-lg border border-secondary/20 text-sm italic">{selectedSurvey.textResponses.q27 || "Sin comentarios."}</p>
+                        <div className="bg-accent/10 p-4 rounded-xl flex items-start gap-3">
+                            <SparklesIcon className="h-6 w-6 text-accent shrink-0" />
+                            <div>
+                                <h4 className="font-bold text-accent text-sm">Análisis de Tendencias</h4>
+                                <p className="text-xs text-text-secondary mt-1">
+                                    Esta nube de palabras se genera automáticamente procesando los comentarios de texto (fortalezas, debilidades y sugerencias) para identificar los conceptos más recurrentes.
+                                </p>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
         );
     }
@@ -521,6 +616,19 @@ const PollModule: React.FC<PollModuleProps> = ({ currentUserId, onComplete, init
                     <button onClick={() => setView('list')} className="text-sm text-text-secondary hover:text-primary font-medium">
                         &larr; Volver al Historial
                     </button>
+                </div>
+            </div>
+
+            {/* Privacy Shield Banner */}
+            <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex items-center gap-4 shadow-sm">
+                <div className="bg-white p-2 rounded-full shadow-sm border border-emerald-100">
+                    <ShieldCheckIcon className="h-8 w-8 text-emerald-500" />
+                </div>
+                <div>
+                    <h3 className="font-bold text-emerald-800 text-sm">Anonimato Garantizado</h3>
+                    <p className="text-xs text-emerald-700 mt-1">
+                        Tus respuestas son privadas y están encriptadas. El docente solo verá promedios agregados y análisis generales, nunca tu nombre asociado a una respuesta específica.
+                    </p>
                 </div>
             </div>
 

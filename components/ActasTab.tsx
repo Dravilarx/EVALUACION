@@ -1,9 +1,9 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Acta, Student, Subject, Teacher, SurveyResult } from '../types';
-import { DocumentTextIcon, CheckCircleIcon, ClockIcon, FilterIcon, XCircleIcon, RefreshIcon, AcademicIcon, ThumbUpIcon } from './icons';
+import { DocumentTextIcon, CheckCircleIcon, ClockIcon, XCircleIcon, RefreshIcon, AcademicIcon, ThumbUpIcon, PrinterIcon, PenIcon, KeyIcon, FingerPrintIcon } from './icons';
 import { ActaService, SurveyService } from '../services/dataService';
-import { COMPETENCIES_LIST, PRESENTATION_CRITERIA_LIST, EVALUATION_SCALE } from '../constants';
+import { COMPETENCIES_LIST, PRESENTATION_CRITERIA_LIST } from '../constants';
 import { getGradeColor } from '../utils';
 
 interface ActasTabProps {
@@ -16,22 +16,35 @@ interface ActasTabProps {
 }
 
 type ModalStep = 'view' | 'confirm' | 'success';
+type SignatureType = 'PIN' | 'Draw';
 
 const ActasTab: React.FC<ActasTabProps> = ({ actas, students, subjects, teachers, currentUserId, onUpdateActa }) => {
-    const isTeacher = currentUserId === 'DOCENTE';
+    // Permissions: Docente OR Admin
+    const isTeacher = currentUserId === 'DOCENTE' || currentUserId === '10611061';
+    
     const [selectedActa, setSelectedActa] = useState<Acta | null>(null);
     const [filterStudent, setFilterStudent] = useState('');
     const [filterSubject, setFilterSubject] = useState('');
     
-    // New State for Multi-step Flow
+    // Multi-step Flow State
     const [modalStep, setModalStep] = useState<ModalStep>('view');
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // Reset step when modal opens/closes
+    // Signature State
+    const [signatureType, setSignatureType] = useState<SignatureType>('PIN');
+    const [pin, setPin] = useState(['', '', '', '']);
+    const pinRefs = useRef<(HTMLInputElement | null)[]>([]);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [hasDrawn, setHasDrawn] = useState(false);
+
+    // Reset state on modal open
     useEffect(() => {
         if (!selectedActa) {
             setModalStep('view');
             setIsProcessing(false);
+            setPin(['', '', '', '']);
+            setHasDrawn(false);
         }
     }, [selectedActa]);
 
@@ -48,24 +61,102 @@ const ActasTab: React.FC<ActasTabProps> = ({ actas, students, subjects, teachers
     const getSubjectName = (id: string) => subjects.find(s => s.id === id)?.name || id;
     const getTeacherName = (id: string) => teachers.find(t => t.id === id)?.name || id;
 
-    const handleInitiateSigning = () => {
-        setModalStep('confirm');
+    // PIN Handling
+    const handlePinChange = (index: number, value: string) => {
+        if (!/^\d*$/.test(value)) return;
+        const newPin = [...pin];
+        newPin[index] = value;
+        setPin(newPin);
+        if (value && index < 3) pinRefs.current[index + 1]?.focus();
+    };
+
+    // Canvas Handling
+    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        setIsDrawing(true);
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+        
+        ctx.beginPath();
+        ctx.moveTo(clientX - rect.left, clientY - rect.top);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+    };
+
+    const draw = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDrawing) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+        ctx.lineTo(clientX - rect.left, clientY - rect.top);
+        ctx.stroke();
+        setHasDrawn(true);
+    };
+
+    const stopDrawing = () => {
+        setIsDrawing(false);
+    };
+
+    const clearCanvas = () => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx?.clearRect(0, 0, canvas.width, canvas.height);
+            setHasDrawn(false);
+        }
+    };
+
+    const handlePrint = () => {
+        window.print();
     };
 
     const handleConfirmSign = async () => {
         if (!selectedActa) return;
         
+        // Validation
+        if (signatureType === 'PIN' && pin.join('').length !== 4) {
+            alert("Ingrese un PIN válido de 4 dígitos.");
+            return;
+        }
+        if (signatureType === 'Draw' && !hasDrawn) {
+            alert("Por favor firme en el recuadro.");
+            return;
+        }
+
         setIsProcessing(true);
         try {
-            // Simulate network delay for better UX
-            await new Promise(resolve => setTimeout(resolve, 800));
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // 1. Update Acta Status
-            const updated = { ...selectedActa, status: 'Aceptada' as const };
+            // Signature Data
+            const sigData = signatureType === 'PIN' 
+                ? 'PIN_VERIFIED' 
+                : canvasRef.current?.toDataURL() || '';
+
+            const updated: Acta = { 
+                ...selectedActa, 
+                status: 'Aceptada',
+                signature: {
+                    type: signatureType,
+                    data: sigData,
+                    timestamp: new Date().toISOString()
+                }
+            };
+            
             await ActaService.update(updated);
             onUpdateActa(updated);
 
-            // 2. Generate Pending Survey for the Teacher & Subject
+            // Generate Survey Logic (Simplified)
             const pendingSurvey: SurveyResult = {
                 id: `SURV-AUTO-${Date.now()}`,
                 studentId: currentUserId,
@@ -78,19 +169,50 @@ const ActasTab: React.FC<ActasTabProps> = ({ actas, students, subjects, teachers
             };
             await SurveyService.create(pendingSurvey);
             
-            setModalStep('success'); // Move to success screen
-            
-            // Close automatically after 2 seconds
-            setTimeout(() => {
-                setSelectedActa(null);
-            }, 2500);
+            setModalStep('success');
+            setTimeout(() => setSelectedActa(null), 3000);
 
         } catch (error) {
             console.error("Error accepting acta:", error);
-            alert("Hubo un error al procesar la firma. Por favor intente nuevamente.");
+            alert("Error al firmar.");
+        } finally {
             setIsProcessing(false);
         }
     };
+
+    const handleInitiateSigning = () => {
+        setModalStep('confirm');
+    };
+
+    // INJECT PRINT STYLES
+    useEffect(() => {
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @media print {
+                body * {
+                    visibility: hidden;
+                }
+                .print-container, .print-container * {
+                    visibility: visible;
+                }
+                .print-container {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: white;
+                    padding: 40px;
+                    z-index: 9999;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        return () => { document.head.removeChild(style); };
+    }, []);
 
     return (
         <div className="space-y-6 animate-fade-in-up">
@@ -174,193 +296,243 @@ const ActasTab: React.FC<ActasTabProps> = ({ actas, students, subjects, teachers
                 </div>
             </div>
 
-            {/* NEW MULTI-STEP MODAL */}
+            {/* MODAL & OFFICIAL DOCUMENT VIEW */}
             {selectedActa && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface w-full max-w-4xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col border border-secondary/20 overflow-hidden relative">
+                    <div className="bg-surface w-full max-w-4xl max-h-[95vh] rounded-xl shadow-2xl flex flex-col border border-secondary/20 overflow-hidden relative">
                         
-                        {/* STEP 3: SUCCESS VIEW */}
+                        {/* SUCCESS STEP */}
                         {modalStep === 'success' && (
-                            <div className="absolute inset-0 z-20 bg-surface flex flex-col items-center justify-center p-8 animate-fade-in-up">
+                            <div className="absolute inset-0 z-50 bg-surface flex flex-col items-center justify-center p-8 animate-fade-in-up">
                                 <div className="w-24 h-24 rounded-full bg-success/10 flex items-center justify-center mb-6">
                                     <CheckCircleIcon className="h-16 w-16 text-success" />
                                 </div>
                                 <h3 className="text-3xl font-bold text-text-primary mb-2">¡Acta Firmada!</h3>
                                 <p className="text-text-secondary text-center max-w-md">
-                                    Has aceptado conforme tu calificación final. El documento ha sido archivado y se ha generado la encuesta docente correspondiente.
+                                    Documento archivado y encuesta docente habilitada.
                                 </p>
                                 <div className="mt-8 w-full max-w-xs bg-secondary/10 h-1 rounded-full overflow-hidden">
                                     <div className="h-full bg-success animate-progress-indeterminate"></div>
                                 </div>
-                                <p className="text-xs text-text-secondary mt-2">Cerrando ventana...</p>
                             </div>
                         )}
 
-                        {/* STEP 2: CONFIRMATION VIEW */}
+                        {/* SIGNATURE STEP */}
                         {modalStep === 'confirm' && (
-                            <div className="absolute inset-0 z-10 bg-surface flex flex-col animate-fade-in-right">
+                            <div className="absolute inset-0 z-40 bg-surface flex flex-col animate-fade-in-right">
                                 <header className="p-6 border-b border-secondary/20 flex justify-between items-center bg-secondary/5">
-                                    <h3 className="text-xl font-bold text-text-primary">Confirmación de Firma</h3>
+                                    <h3 className="text-xl font-bold text-text-primary">Firma Digital</h3>
                                     <button onClick={() => setModalStep('view')} className="p-2 hover:bg-secondary/20 rounded-full"><XCircleIcon className="h-6 w-6 text-text-secondary" /></button>
                                 </header>
-                                <div className="flex-grow p-8 flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
-                                    <AcademicIcon className="h-16 w-16 text-primary mb-6" />
-                                    <h4 className="text-2xl font-bold text-text-primary mb-4">Declaración de Conformidad</h4>
-                                    <p className="text-text-secondary mb-8 leading-relaxed">
-                                        Yo, <strong>{getStudentName(selectedActa.studentId)}</strong>, declaro haber revisado en detalle mi calificación final de 
-                                        <span className="font-bold text-text-primary"> {selectedActa.content.finalGrade.toFixed(1)}</span> para la asignatura 
-                                        <strong> {getSubjectName(selectedActa.subjectId)}</strong>, así como el feedback proporcionado por el docente. 
-                                        <br/><br/>
-                                        Al firmar este documento digital, acepto la nota asignada y confirmo que he recibido la retroalimentación correspondiente.
-                                    </p>
-                                    
-                                    <div className="w-full bg-yellow-50 border border-yellow-100 p-4 rounded-lg text-left mb-8 flex gap-3">
-                                        <div className="text-yellow-600 mt-1"><ClockIcon className="h-5 w-5"/></div>
-                                        <div>
-                                            <p className="text-sm font-bold text-yellow-800">Esta acción es irreversible</p>
-                                            <p className="text-xs text-yellow-700">Una vez firmada, el acta quedará bloqueada y no se podrán realizar modificaciones posteriores.</p>
+                                <div className="flex-grow p-8 flex flex-col items-center justify-center">
+                                    <div className="bg-white p-8 rounded-xl shadow-lg border border-secondary/20 w-full max-w-md">
+                                        <div className="flex justify-center gap-4 mb-6 border-b border-secondary/10 pb-4">
+                                            <button 
+                                                onClick={() => setSignatureType('PIN')}
+                                                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-bold ${signatureType === 'PIN' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:bg-secondary/10'}`}
+                                            >
+                                                <KeyIcon className="h-5 w-5" /> PIN
+                                            </button>
+                                            <button 
+                                                onClick={() => setSignatureType('Draw')}
+                                                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-bold ${signatureType === 'Draw' ? 'bg-primary text-white shadow' : 'text-text-secondary hover:bg-secondary/10'}`}
+                                            >
+                                                <PenIcon className="h-5 w-5" /> Trazo
+                                            </button>
+                                        </div>
+
+                                        {signatureType === 'PIN' ? (
+                                            <div className="text-center space-y-4">
+                                                <p className="text-sm text-text-secondary">Ingrese su PIN de seguridad de 4 dígitos</p>
+                                                <div className="flex justify-center gap-3">
+                                                    {pin.map((digit, idx) => (
+                                                        <input
+                                                            key={idx}
+                                                            ref={el => { pinRefs.current[idx] = el; }}
+                                                            type="password"
+                                                            maxLength={1}
+                                                            value={digit}
+                                                            onChange={e => handlePinChange(idx, e.target.value)}
+                                                            className="w-12 h-12 text-center text-2xl border-2 border-secondary/30 rounded-lg focus:border-primary focus:ring-4 focus:ring-primary/20 outline-none transition-all"
+                                                        />
+                                                    ))}
+                                                </div>
+                                                <p className="text-xs text-text-secondary italic mt-2">Para pruebas: Cualquier 4 dígitos</p>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center space-y-4">
+                                                <p className="text-sm text-text-secondary">Dibuje su firma en el recuadro</p>
+                                                <div className="border-2 border-dashed border-secondary/40 rounded-lg bg-gray-50 relative">
+                                                    <canvas 
+                                                        ref={canvasRef}
+                                                        width={350}
+                                                        height={150}
+                                                        className="cursor-crosshair w-full touch-none"
+                                                        onMouseDown={startDrawing}
+                                                        onMouseMove={draw}
+                                                        onMouseUp={stopDrawing}
+                                                        onMouseLeave={stopDrawing}
+                                                        onTouchStart={startDrawing}
+                                                        onTouchMove={draw}
+                                                        onTouchEnd={stopDrawing}
+                                                    />
+                                                    <button onClick={clearCanvas} className="absolute top-2 right-2 text-xs text-danger hover:bg-danger/10 px-2 py-1 rounded">Borrar</button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-8 flex gap-3">
+                                            <button onClick={() => setModalStep('view')} className="flex-1 px-4 py-2 border rounded-lg text-sm hover:bg-secondary/5 transition-colors">Cancelar</button>
+                                            <button 
+                                                onClick={handleConfirmSign}
+                                                disabled={isProcessing}
+                                                className="flex-1 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm font-bold shadow-lg transition-all flex justify-center items-center gap-2"
+                                            >
+                                                {isProcessing ? <RefreshIcon className="animate-spin h-4 w-4"/> : <FingerPrintIcon className="h-4 w-4"/>}
+                                                Firmar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* DOCUMENT VIEW */}
+                        <header className="p-4 border-b border-secondary/20 flex justify-between items-center bg-secondary/5 print:hidden">
+                            <h3 className="text-lg font-bold text-text-primary">Vista Previa</h3>
+                            <div className="flex gap-2">
+                                <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-white border border-secondary/30 rounded-lg text-sm font-bold hover:bg-secondary/5 transition-colors">
+                                    <PrinterIcon className="h-4 w-4" /> Imprimir Oficial
+                                </button>
+                                <button onClick={() => setSelectedActa(null)} className="p-2 hover:bg-secondary/20 rounded-full"><XCircleIcon className="h-6 w-6" /></button>
+                            </div>
+                        </header>
+
+                        <div className="overflow-y-auto bg-gray-100 flex justify-center p-8 print:p-0 print:bg-white flex-grow">
+                            {/* OFFICIAL DOCUMENT CONTAINER */}
+                            <div className="print-container bg-white w-full max-w-[210mm] min-h-[297mm] p-12 shadow-2xl relative text-gray-900 font-serif print:shadow-none print:w-full">
+                                
+                                {/* Watermark */}
+                                <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none overflow-hidden">
+                                    <div className="transform -rotate-45 text-9xl font-bold whitespace-nowrap">
+                                        DOCUMENTO OFICIAL UA DOCUMENTO OFICIAL UA
+                                    </div>
+                                </div>
+
+                                {/* Header */}
+                                <div className="text-center border-b-2 border-gray-800 pb-6 mb-8">
+                                    <div className="flex justify-center mb-4">
+                                        <AcademicIcon className="h-16 w-16 text-gray-800" />
+                                    </div>
+                                    <h1 className="text-2xl font-bold uppercase tracking-widest mb-1">Universidad de Antofagasta</h1>
+                                    <h2 className="text-lg font-semibold text-gray-600">Facultad de Medicina y Odontología</h2>
+                                    <p className="text-sm italic mt-2">Departamento de Radiología e Imágenes</p>
+                                </div>
+
+                                {/* Title */}
+                                <div className="text-center mb-10">
+                                    <h3 className="text-xl font-bold uppercase border-2 border-gray-800 inline-block px-6 py-2">Acta de Calificación Final</h3>
+                                    <p className="text-sm mt-2 text-gray-500 font-mono">FOLIO: {selectedActa.id}</p>
+                                </div>
+
+                                {/* Student Info */}
+                                <div className="mb-8 grid grid-cols-2 gap-y-4 text-sm">
+                                    <div><span className="font-bold uppercase text-gray-500 text-xs block">Nombre del Residente:</span> {getStudentName(selectedActa.studentId)}</div>
+                                    <div><span className="font-bold uppercase text-gray-500 text-xs block">RUT / ID:</span> {selectedActa.studentId}</div>
+                                    <div><span className="font-bold uppercase text-gray-500 text-xs block">Asignatura:</span> {getSubjectName(selectedActa.subjectId)}</div>
+                                    <div><span className="font-bold uppercase text-gray-500 text-xs block">Fecha de Emisión:</span> {new Date(selectedActa.generatedAt).toLocaleDateString()}</div>
+                                </div>
+
+                                {/* Grades Table */}
+                                <table className="w-full text-sm border-collapse border border-gray-300 mb-8">
+                                    <thead className="bg-gray-100">
+                                        <tr>
+                                            <th className="border border-gray-300 p-2 text-left w-2/3">Ítem de Evaluación</th>
+                                            <th className="border border-gray-300 p-2 text-center w-1/3">Calificación (1.0 - 7.0)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td className="border border-gray-300 p-2">Evaluación Teórica (Escrita) - 60%</td>
+                                            <td className="border border-gray-300 p-2 text-center">{selectedActa.content.writtenGrade.toFixed(1)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="border border-gray-300 p-2">Evaluación de Competencias - 30%</td>
+                                            <td className="border border-gray-300 p-2 text-center">{selectedActa.content.competencyGrade.toFixed(1)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="border border-gray-300 p-2">Presentación Clínica - 10%</td>
+                                            <td className="border border-gray-300 p-2 text-center">{selectedActa.content.presentationGrade.toFixed(1)}</td>
+                                        </tr>
+                                        <tr className="bg-gray-50 font-bold">
+                                            <td className="border border-gray-300 p-3 text-right uppercase">Nota Final Ponderada</td>
+                                            <td className="border border-gray-300 p-3 text-center text-lg">{selectedActa.content.finalGrade.toFixed(1)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                {/* Feedback Section */}
+                                <div className="mb-12 border border-gray-200 p-4 rounded bg-gray-50">
+                                    <p className="font-bold text-xs uppercase text-gray-500 mb-2">Observaciones del Docente:</p>
+                                    <p className="italic text-gray-700 text-sm leading-relaxed">"{selectedActa.content.writtenComment || 'Sin observaciones adicionales.'}"</p>
+                                </div>
+
+                                {/* Signatures Footer */}
+                                <div className="mt-auto pt-12 flex justify-between items-end gap-10">
+                                    <div className="text-center flex-1">
+                                        {/* Teacher Signature Placeholder */}
+                                        <div className="h-16 mb-2 flex items-end justify-center">
+                                            <img src={`https://ui-avatars.com/api/?name=${getTeacherName(selectedActa.teacherId)}&background=random&font-size=0.33`} className="h-12 opacity-50 grayscale" alt="Firma Docente" />
+                                        </div>
+                                        <div className="border-t border-gray-400 pt-2">
+                                            <p className="font-bold text-sm">{getTeacherName(selectedActa.teacherId)}</p>
+                                            <p className="text-xs text-gray-500 uppercase">Docente Responsable</p>
                                         </div>
                                     </div>
 
-                                    <div className="flex gap-4 w-full justify-center">
-                                        <button 
-                                            onClick={() => setModalStep('view')}
-                                            className="px-6 py-3 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors font-medium"
-                                            disabled={isProcessing}
-                                        >
-                                            Volver a Revisar
-                                        </button>
-                                        <button 
-                                            onClick={handleConfirmSign}
-                                            disabled={isProcessing}
-                                            className="px-8 py-3 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-lg transition-all flex items-center gap-2"
-                                        >
-                                            {isProcessing ? <RefreshIcon className="h-5 w-5 animate-spin" /> : <CheckCircleIcon className="h-5 w-5" />}
-                                            {isProcessing ? 'Firmando...' : 'Firmar Digitalmente'}
-                                        </button>
+                                    <div className="text-center flex-1">
+                                        {/* Student Signature */}
+                                        <div className="h-16 mb-2 flex items-end justify-center">
+                                            {selectedActa.signature ? (
+                                                selectedActa.signature.type === 'Draw' ? (
+                                                    <img src={selectedActa.signature.data} className="h-14" alt="Firma Alumno" />
+                                                ) : (
+                                                    <div className="border-2 border-gray-800 px-2 py-1 font-mono text-xs font-bold tracking-widest transform -rotate-2">
+                                                        PIN: VERIFICADO
+                                                        <br/><span className="text-[8px] font-sans font-normal">{new Date(selectedActa.signature.timestamp).toLocaleDateString()}</span>
+                                                    </div>
+                                                )
+                                            ) : (
+                                                <div className="h-full w-full border border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
+                                                    Pendiente de Firma
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="border-t border-gray-400 pt-2">
+                                            <p className="font-bold text-sm">{getStudentName(selectedActa.studentId)}</p>
+                                            <p className="text-xs text-gray-500 uppercase">Residente (Toma de Conocimiento)</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-
-                        {/* STEP 1: DOCUMENT VIEW (DEFAULT) */}
-                        <header className="p-6 border-b border-secondary/20 flex justify-between items-start bg-secondary/5">
-                            <div>
-                                <h3 className="text-2xl font-bold text-text-primary uppercase tracking-wide">Acta de Calificación</h3>
-                                <p className="text-sm text-text-secondary">Folio: {selectedActa.id}</p>
-                            </div>
-                            <button onClick={() => setSelectedActa(null)} className="p-2 hover:bg-secondary/20 rounded-full"><XCircleIcon className="h-6 w-6 text-text-secondary" /></button>
-                        </header>
-
-                        <div className="p-8 overflow-y-auto space-y-8 bg-white text-gray-800 flex-grow">
-                            {/* Header Info */}
-                            <div className="grid grid-cols-2 gap-6 border-b-2 border-gray-100 pb-6">
-                                <div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Alumno</p>
-                                    <p className="text-lg font-bold">{getStudentName(selectedActa.studentId)}</p>
+                                
+                                <div className="text-center mt-12 text-[10px] text-gray-400">
+                                    Documento generado electrónicamente por sistema GRUA - Universidad de Antofagasta. 
+                                    <br/>Código de Verificación: {selectedActa.id}-{Date.now().toString(36)}
                                 </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Asignatura</p>
-                                    <p className="text-lg font-bold">{getSubjectName(selectedActa.subjectId)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Docente Responsable</p>
-                                    <p className="font-medium">{getTeacherName(selectedActa.teacherId)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-400 uppercase">Fecha Emisión</p>
-                                    <p className="font-medium">{new Date(selectedActa.generatedAt).toLocaleDateString()}</p>
-                                </div>
-                            </div>
-
-                            {/* Summary Grades */}
-                            <div className="grid grid-cols-4 gap-4 text-center bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-inner">
-                                <div>
-                                    <p className="text-xs font-bold text-gray-500 mb-2">Evaluación Escrita (60%)</p>
-                                    <p className="text-3xl font-bold text-blue-600">{selectedActa.content.writtenGrade.toFixed(1)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-500 mb-2">Competencias (30%)</p>
-                                    <p className="text-3xl font-bold text-indigo-600">{selectedActa.content.competencyGrade.toFixed(1)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-500 mb-2">Presentación (10%)</p>
-                                    <p className="text-3xl font-bold text-cyan-600">{selectedActa.content.presentationGrade.toFixed(1)}</p>
-                                </div>
-                                <div className="border-l-2 border-gray-300 pl-4 bg-white rounded-r-lg">
-                                    <p className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wider">Nota Final</p>
-                                    <p className={`text-4xl font-extrabold ${getGradeColor(selectedActa.content.finalGrade)}`}>{selectedActa.content.finalGrade.toFixed(1)}</p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                {/* Details - Competencies */}
-                                <div>
-                                    <h4 className="font-bold text-indigo-700 border-b border-indigo-100 pb-2 mb-3 uppercase text-sm">Detalle Competencias Personales</h4>
-                                    <ul className="text-sm space-y-2">
-                                        {COMPETENCIES_LIST.map(item => (
-                                            <li key={item.id} className="flex justify-between items-center border-b border-gray-50 pb-1 hover:bg-gray-50 px-2 rounded">
-                                                <span className="text-gray-600 truncate mr-2" title={item.title}>{item.title}</span>
-                                                <span className="font-bold">{selectedActa.content.competencyDetails[item.id] || '-'}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-
-                                {/* Details - Presentation */}
-                                <div>
-                                    <h4 className="font-bold text-cyan-700 border-b border-cyan-100 pb-2 mb-3 uppercase text-sm">Detalle Presentación</h4>
-                                    <ul className="text-sm space-y-2">
-                                        {PRESENTATION_CRITERIA_LIST.map(item => (
-                                            <li key={item.id} className="flex justify-between items-center border-b border-gray-50 pb-1 hover:bg-gray-50 px-2 rounded">
-                                                <span className="text-gray-600 truncate mr-2" title={item.title}>{item.title}</span>
-                                                <span className="font-bold">{selectedActa.content.presentationDetails[item.id] || '-'}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-                            
-                            {/* Feedback Section - Prominent */}
-                            <div className="mt-8 bg-blue-50/50 p-6 rounded-xl border border-blue-100 relative">
-                                <h4 className="font-bold text-blue-800 uppercase text-sm mb-3 flex items-center gap-2">
-                                    <ThumbUpIcon className="h-4 w-4"/> Feedback del Docente
-                                </h4>
-                                {selectedActa.content.writtenComment ? (
-                                    <div className="text-gray-700 italic relative pl-6 border-l-4 border-blue-300">
-                                        <p className="text-lg leading-relaxed">"{selectedActa.content.writtenComment}"</p>
-                                    </div>
-                                ) : (
-                                    <p className="text-gray-400 italic text-sm text-center py-2">Sin comentarios registrados por el docente.</p>
-                                )}
                             </div>
                         </div>
 
-                        <footer className="p-6 border-t border-secondary/20 bg-secondary/5 flex justify-end gap-4 rounded-b-xl items-center">
-                            <button 
-                                onClick={() => setSelectedActa(null)} 
-                                className="px-6 py-2 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors font-medium"
-                            >
-                                Cerrar
-                            </button>
-                            
-                            {/* Signature Actions */}
-                            {!isTeacher && selectedActa.status === 'Pendiente' && selectedActa.studentId === currentUserId && (
+                        {/* Footer Actions (Only for Student if Pending) */}
+                        {!isTeacher && selectedActa.status === 'Pendiente' && selectedActa.studentId === currentUserId && (
+                            <div className="p-4 bg-surface border-t border-secondary/20 flex justify-center print:hidden">
                                 <button 
                                     onClick={handleInitiateSigning}
-                                    className="px-6 py-2 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-lg transition-colors flex items-center gap-2 animate-pulse"
+                                    className="px-8 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg transition-all flex items-center gap-2 animate-pulse"
                                 >
-                                    <CheckCircleIcon className="h-5 w-5" /> Revisar y Firmar
+                                    <PenIcon className="h-5 w-5" /> Firmar Conforme
                                 </button>
-                            )}
-                            
-                            {/* Signed Status Indicator */}
-                            {selectedActa.status === 'Aceptada' && (
-                                <div className="px-6 py-2 rounded-lg bg-success/10 text-success border border-success/20 font-bold flex items-center gap-2 cursor-default">
-                                    <CheckCircleIcon className="h-5 w-5" /> Documento Firmado y Aceptado
-                                </div>
-                            )}
-                        </footer>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

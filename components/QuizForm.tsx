@@ -135,6 +135,27 @@ const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestio
         setSelectedQuestions(prev => [...prev, ...newQuestions]);
     };
 
+    // --- SIMULATED EXAM MODE ---
+    const handleGenerateSimulation = () => {
+        if (allQuestions.length === 0) return;
+        
+        const SIMULATION_SIZE = 20; // Example size
+        // Shuffle entire bank
+        const shuffled = [...allQuestions].sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, SIMULATION_SIZE);
+        
+        const newQuestions = selected.map(q => ({
+            codigo_pregunta: q.codigo_pregunta,
+            puntaje: 2 // Standard score for simulation
+        }));
+        
+        setSelectedQuestions(newQuestions);
+        setTitle(`Examen Simulado - ${new Date().toLocaleDateString()}`);
+        setDescription('Simulación de examen final con preguntas aleatorias de todas las asignaturas.');
+        setAsignatura('Interdisciplinario'); // Set to general subject
+        setTimeLimit(60); // 60 mins default
+    };
+
     const handleRemoveQuestion = (questionCode: string) => {
         setSelectedQuestions(prev => prev.filter(q => q.codigo_pregunta !== questionCode));
     };
@@ -172,13 +193,14 @@ const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestio
         }
         
         const quizId = isEditing && initialData ? initialData.id_cuestionario : `QUIZ-${String(Date.now()).slice(-4)}`;
-        
+        const isSimulation = title.toLowerCase().includes('simulad');
+
         const updatedQuiz: Quiz = {
             id_cuestionario: quizId,
             titulo: title,
             descripcion: description,
             preguntas: selectedQuestions,
-            creado_desde: isEditing && initialData ? initialData.creado_desde : 'banco',
+            creado_desde: isSimulation ? 'simulacro' : (isEditing && initialData ? initialData.creado_desde : 'banco'),
             alumnos_asignados: isEditing && initialData ? initialData.alumnos_asignados : [],
             tiempo_limite_minutos: timeLimit,
             ventana_disponibilidad: isEditing && initialData ? initialData.ventana_disponibilidad : {
@@ -205,18 +227,26 @@ const QuizForm: React.FC<QuizFormProps> = ({ isOpen, onClose, onSave, allQuestio
                 <main className="flex-grow p-6 overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Left Column: Selected Questions & Details */}
                     <div className="flex flex-col space-y-4 overflow-y-auto pr-3">
-                        <h4 className="text-lg font-semibold text-accent">Detalles del Cuestionario</h4>
+                        <div className="flex justify-between items-start">
+                            <h4 className="text-lg font-semibold text-accent">Detalles del Cuestionario</h4>
+                            {!isEditing && (
+                                <button 
+                                    onClick={handleGenerateSimulation}
+                                    className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded font-bold flex items-center gap-1 transition-colors animate-pulse"
+                                >
+                                    <SparklesIcon className="h-4 w-4" /> Generar Examen Simulado
+                                </button>
+                            )}
+                        </div>
+                        
                         <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Título del Cuestionario" className="w-full bg-background border border-secondary/30 rounded p-2" />
                         <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Descripción" rows={3} className="w-full bg-background border border-secondary/30 rounded p-2" />
                         
                         <div className="grid grid-cols-2 gap-4">
                              <input type="text" value={docente} onChange={e => setDocente(e.target.value)} placeholder="Docente creador" className="w-full bg-background border border-secondary/30 rounded p-2" />
                              <select value={asignatura} onChange={e => setAsignatura(e.target.value)} className="w-full bg-background border border-secondary/30 rounded p-2">
-                                 {subjects.length > 0 ? (
-                                     subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)
-                                 ) : (
-                                     <option value="">No hay asignaturas disponibles</option>
-                                 )}
+                                 <option value="Interdisciplinario">Interdisciplinario / General</option>
+                                 {subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                              </select>
                         </div>
                         

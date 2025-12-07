@@ -1,5 +1,5 @@
 
-import { Question, Quiz, Attempt, QuestionType, Student, Teacher, Subject, BulletinEntry } from '../types';
+import { Question, Quiz, Attempt, QuestionType, Student, Teacher, Subject, BulletinEntry, AppDocument } from '../types';
 
 export const mockStudents: Student[] = [
   { 
@@ -110,7 +110,8 @@ export const mockTeachers: Teacher[] = [
         university_postgrad: "Harvard Medical School",
         nationality: "Chilena",
         sex: "Masculino",
-        photo_url: "https://i.pravatar.cc/150?u=marcelo"
+        photo_url: "https://i.pravatar.cc/150?u=marcelo",
+        subSpecialties: ["Torácica", "Neurorradiología", "Gestión"]
     },
     {
         id: "12.333.444-5",
@@ -127,7 +128,8 @@ export const mockTeachers: Teacher[] = [
         university_postgrad: "Universidad Católica de Chile",
         nationality: "Chilena",
         sex: "Femenino",
-        photo_url: "https://i.pravatar.cc/150?u=anafuentes"
+        photo_url: "https://i.pravatar.cc/150?u=anafuentes",
+        subSpecialties: ["Ultrasonido", "Mama", "Pediátrica"]
     }
 ];
 
@@ -137,21 +139,36 @@ export const mockSubjects: Subject[] = [
         name: "Radiología Torácica",
         code: "RAD-TOR-101",
         lead_teacher_id: "10.111.222-3", // Dr. Marcelo Avila
-        participating_teachers_ids: ["12.333.444-5"] // Dra. Ana Fuentes
+        participating_teachers_ids: ["12.333.444-5"], // Dra. Ana Fuentes
+        procedures: [
+            { id: "proc-1", name: "Informe de Radiografía de Tórax", goal: 50 },
+            { id: "proc-2", name: "Informe de TC de Tórax", goal: 20 },
+            { id: "proc-3", name: "Biopsia Pleural Percutánea", goal: 5 }
+        ]
     },
     {
         id: "SUBJ-002",
         name: "Neurorradiología",
         code: "RAD-NEU-201",
         lead_teacher_id: "10.111.222-3", // Dr. Marcelo Avila
-        participating_teachers_ids: []
+        participating_teachers_ids: [],
+        procedures: [
+            { id: "proc-4", name: "Informe de TC Cerebro", goal: 30 },
+            { id: "proc-5", name: "Informe de RM Cerebro", goal: 15 },
+            { id: "proc-6", name: "Angio-TC de Cuello", goal: 10 }
+        ]
     },
     {
         id: "SUBJ-003",
         name: "Ultrasonido Doppler",
         code: "RAD-ECO-301",
         lead_teacher_id: "12.333.444-5", // Dra. Ana Fuentes
-        participating_teachers_ids: ["10.111.222-3"] // Dr. Marcelo Avila
+        participating_teachers_ids: ["10.111.222-3"], // Dr. Marcelo Avila
+        procedures: [
+            { id: "proc-7", name: "Ecografía Abdominal Completa", goal: 40 },
+            { id: "proc-8", name: "Doppler Carotídeo", goal: 15 },
+            { id: "proc-9", name: "Doppler Venoso EEII", goal: 15 }
+        ]
     }
 ];
 
@@ -169,7 +186,8 @@ export const mockBulletinEntries: BulletinEntry[] = [
             files: [{ name: "programa_reunion.pdf", type: "application/pdf", data: "" }],
             links: ["https://zoom.us/j/123456"]
         },
-        priority: true
+        priority: true,
+        visibility: 'public'
     },
     {
         id: '2',
@@ -184,7 +202,8 @@ export const mockBulletinEntries: BulletinEntry[] = [
             files: [],
             links: []
         },
-        priority: true
+        priority: true,
+        visibility: 'residents'
     },
     {
         id: '3',
@@ -199,7 +218,8 @@ export const mockBulletinEntries: BulletinEntry[] = [
             files: [{ name: "bases_beca.docx", type: "application/msword", data: "" }],
             links: ["https://sochradi.cl"]
         },
-        priority: false
+        priority: false,
+        visibility: 'public'
     },
     {
         id: '4',
@@ -214,7 +234,24 @@ export const mockBulletinEntries: BulletinEntry[] = [
             files: [],
             links: []
         },
-        priority: false
+        priority: false,
+        visibility: 'public'
+    },
+    {
+        id: '5',
+        category: "Noticia",
+        date: "2025-10-08T10:00:00.000Z",
+        title: "Reunión de Coordinación Docente",
+        summary: "Reunión exclusiva para definir calendario 2026.",
+        content: "Se cita a todos los docentes a la reunión semestral para planificación académica.",
+        author: "Dr. Marcelo Avila",
+        attachments: {
+            images: [],
+            files: [],
+            links: []
+        },
+        priority: false,
+        visibility: 'teachers'
     }
 ];
 
@@ -246,7 +283,8 @@ export const initialQuestions: Question[] = [
     tiene_multimedia: true,
     fecha_creacion: new Date().toISOString().split('T')[0],
     veces_utilizada: 5,
-    rating: 2
+    rating: 2,
+    es_caso_del_dia: true // Marked as Case of the Day
   },
   {
     codigo_pregunta: "CAR-ANA-0001",
@@ -265,7 +303,8 @@ export const initialQuestions: Question[] = [
     tiene_multimedia: false,
     fecha_creacion: new Date(Date.now() - 86400000 * 5).toISOString().split('T')[0],
     veces_utilizada: 12,
-    rating: 0
+    rating: 0,
+    es_caso_del_dia: false
   },
    {
     codigo_pregunta: "NEU-LUC-0002",
@@ -288,7 +327,45 @@ export const initialQuestions: Question[] = [
     tiene_multimedia: false,
     fecha_creacion: new Date(Date.now() - 86400000 * 10).toISOString().split('T')[0],
     veces_utilizada: 8,
-    rating: 3
+    rating: 3,
+    es_caso_del_dia: false
+  },
+  {
+    codigo_pregunta: "RAD-TOR-DICOM-01",
+    tipo_pregunta: QuestionType.MultipleChoice,
+    enunciado: "Analice la siguiente serie de TC de Tórax. ¿Cuál es el diagnóstico más probable para la lesión visible en el lóbulo superior derecho?",
+    alternativas: [
+      { id: "A", texto: "Carcinoma Broncogénico", es_correcta: true },
+      { id: "B", texto: "Hamartoma Pulmonar", es_correcta: false },
+      { id: "C", texto: "Granuloma Calcificado", es_correcta: false },
+      { id: "D", texto: "Neumonía Redonda", es_correcta: false }
+    ],
+    feedback_correcto: "La lesión presenta bordes espiculados y no tiene calcificaciones centrales ni grasa, lo que sugiere malignidad primaria.",
+    feedback_incorrecto: "Fíjate en los bordes de la lesión y la densidad interna. Un hamartoma suele tener grasa o calcificación 'popcorn'.",
+    adjuntos: {
+      imagenes: [],
+      videos: [],
+      links: [],
+      // Simulated DICOM stack (using varied picsum images to simulate slices)
+      dicomFrames: [
+          "https://picsum.photos/seed/slice1/500/500?grayscale",
+          "https://picsum.photos/seed/slice2/500/500?grayscale",
+          "https://picsum.photos/seed/slice3/500/500?grayscale",
+          "https://picsum.photos/seed/slice4/500/500?grayscale",
+          "https://picsum.photos/seed/slice5/500/500?grayscale"
+      ]
+    },
+    docente_creador: "Marcelo Avila",
+    especialidad: "Radiología Torácica",
+    dificultad: 5,
+    tema: "Nódulo Pulmonar",
+    subtema: "Cáncer de Pulmón",
+    etiquetas: ["TC", "Tórax", "DICOM"],
+    tiene_multimedia: true,
+    fecha_creacion: new Date().toISOString().split('T')[0],
+    veces_utilizada: 2,
+    rating: 3,
+    es_caso_del_dia: false
   }
 ];
 
@@ -368,5 +445,56 @@ export const initialAttempts: Attempt[] = [
         nota: 1.0,
         tiempo_utilizado_seg: 900,
         estado: "entregado"
+    }
+];
+
+export const mockDocuments: AppDocument[] = [
+    {
+        id: 'DOC-PROG-001',
+        title: 'Reglamento General de Residentes',
+        type: 'PDF',
+        category: 'Administrativo',
+        uploadDate: '2023-01-15',
+        ownerType: 'Program',
+        visibility: 'public'
+    },
+    {
+        id: 'DOC-PROG-002',
+        title: 'Malla Curricular 2024',
+        type: 'PDF',
+        category: 'Académico',
+        uploadDate: '2023-12-20',
+        ownerType: 'Program',
+        visibility: 'public'
+    },
+    {
+        id: 'DOC-RES-001',
+        title: 'Certificado de Título',
+        type: 'PDF',
+        category: 'Legal',
+        uploadDate: '2024-03-01',
+        ownerType: 'Student',
+        ownerId: '18.123.456-7', // Juan Pérez
+        visibility: 'teachers_only'
+    },
+    {
+        id: 'DOC-RES-002',
+        title: 'Seguro de Responsabilidad Civil',
+        type: 'PDF',
+        category: 'Legal',
+        uploadDate: '2024-03-05',
+        ownerType: 'Student',
+        ownerId: '18.123.456-7',
+        visibility: 'teachers_only'
+    },
+    {
+        id: 'DOC-TEACH-001',
+        title: 'Contrato Docente 2024',
+        type: 'PDF',
+        category: 'Administrativo',
+        uploadDate: '2024-02-28',
+        ownerType: 'Teacher',
+        ownerId: '10.111.222-3', // Dr. Marcelo Avila
+        visibility: 'private'
     }
 ];

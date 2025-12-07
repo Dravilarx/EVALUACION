@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Quiz, Question, QuestionType, Attempt } from '../types';
 import { VideoIcon, LinkIcon, ZoomInIcon, ZoomOutIcon, CloseIcon, RefreshIcon, PencilIcon, MenuIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon, XCircleIcon, SparklesIcon } from './icons';
 import ImageEditor from './ImageEditor';
+import DicomViewer from './DicomViewer';
 import { calculateGrade, getGradeColor } from '../utils';
 
 const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attempt: Attempt) => void; studentId: string }> = ({ quiz, questions, onSubmit, studentId }) => {
@@ -353,6 +354,7 @@ const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attemp
 
     // Determine which image to show (original or edited by student)
     const displayImage = editedImages[currentQuestion.codigo_pregunta] || currentQuestion.adjuntos.imagenes?.[0];
+    const hasDicom = currentQuestion.adjuntos.dicomFrames && currentQuestion.adjuntos.dicomFrames.length > 0;
 
     const minutes = Math.floor(timeLeft / 60);
     const seconds = timeLeft % 60;
@@ -457,8 +459,12 @@ const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attemp
                     <div className="mb-8 min-h-[300px]">
                         <h3 className="text-xl mb-4 font-medium leading-relaxed">{currentQuestion.enunciado}</h3>
                         
-                        {/* Display Question Image */}
-                        {displayImage && 
+                        {/* DICOM Viewer or Image */}
+                        {hasDicom ? (
+                            <div className="my-6">
+                                <DicomViewer frames={currentQuestion.adjuntos.dicomFrames!} />
+                            </div>
+                        ) : displayImage && (
                             <div className="relative group inline-block">
                                 <img 
                                     src={displayImage} 
@@ -470,7 +476,7 @@ const QuizTaker: React.FC<{ quiz: Quiz; questions: Question[]; onSubmit: (attemp
                                     Clic para ampliar y editar
                                 </div>
                             </div>
-                        }
+                        )}
                         
                         {(currentQuestion.adjuntos.videos?.length || 0) > 0 || (currentQuestion.adjuntos.links?.length || 0) > 0 ? (
                             <div className="mt-4 space-y-3 bg-background/50 p-4 rounded-lg border border-secondary/10">

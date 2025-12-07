@@ -5,6 +5,102 @@ export enum QuestionType {
   FreeResponse = "free_response",
 }
 
+export type UserRole = 'ADMIN' | 'TEACHER' | 'RESIDENT';
+
+// PERMISSIONS MATRIX BASED ON IMAGE
+export const MODULE_PERMISSIONS: Record<string, UserRole[]> = {
+    // Row: Inicio
+    dashboard: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: Bitacora
+    audit_log: ['ADMIN'],
+    // Row: administracion
+    admin_panel: ['ADMIN'],
+    // Row: asignaturas
+    subjects: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: docentes
+    teachers: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: residentes
+    residents: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: competencias personales
+    surveys: ['ADMIN'], 
+    // Row: presentacion
+    presentation: ['ADMIN'], 
+    // Row: evaluacion escrita
+    evaluations: ['ADMIN', 'TEACHER'],
+    // Row: libro de notas
+    grades: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: carpeta residentes (Checked for Admin & Resident)
+    residents_folder: ['ADMIN', 'RESIDENT'],
+    // Row: carpeta docentes (Checked for Admin & Teacher)
+    teachers_folder: ['ADMIN', 'TEACHER'],
+    // Row: anotaciones
+    annotations: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: extension
+    activities: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: mensajeria
+    messaging: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: cartelera UA
+    news: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: documentos
+    documents: ['ADMIN'],
+    // Row: encuesta
+    poll: ['ADMIN'],
+    
+    // Internal/Extra features (Implicit permissions based on context)
+    change_requests: ['TEACHER', 'ADMIN'], // Feature added in previous step
+};
+
+export interface UserProfile {
+    id: string;
+    name: string;
+    email: string;
+    roles: UserRole[]; // A user can have multiple roles
+    activeRole: UserRole; // The role currently being used
+    photo_url?: string;
+}
+
+export interface LogEntry {
+    id: string;
+    timestamp: string;
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'REQUEST';
+    module: string;
+    details: string;
+    userId: string;
+    userName: string;
+    userRole: UserRole;
+}
+
+export interface ChangeRequest {
+    id: string;
+    teacherId: string;
+    teacherName: string;
+    date: string;
+    type: 'DELETE' | 'MODIFY_RESTRICTED';
+    description: string;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    targetId?: string; // ID of the item to delete/modify
+}
+
+export interface MessageAttachment {
+    type: 'image' | 'video' | 'link' | 'file';
+    url: string;
+    name?: string;
+}
+
+export interface Message {
+    id: string;
+    senderId: string;
+    senderName: string;
+    recipientIds: string[]; // Array of User IDs
+    recipientGroupLabel?: string; // e.g. "Todos los R1" (Optional metadata)
+    subject: string;
+    content: string;
+    timestamp: string;
+    readBy: string[]; // Array of User IDs who have read the message
+    isDeletedBy: string[]; // Soft delete per user
+    attachments?: MessageAttachment[];
+}
+
 export interface Alternative {
   id: string;
   texto: string;
@@ -27,6 +123,7 @@ export interface Attachment {
   imagenes?: string[];
   videos?: string[];
   links?: string[];
+  dicomFrames?: string[]; // Array of image URLs representing slices
 }
 
 export interface Question {
@@ -49,6 +146,7 @@ export interface Question {
   fecha_creacion: string;
   veces_utilizada: number;
   rating?: 0 | 1 | 2 | 3; // 0: Sin clasificar, 1-3: Estrellas de favorito
+  es_caso_del_dia?: boolean; // Indica si la pregunta es elegible para el widget del dashboard
 }
 
 export interface QuizQuestion {
@@ -61,7 +159,7 @@ export interface Quiz {
   titulo: string;
   descripcion: string;
   preguntas: QuizQuestion[];
-  creado_desde: "banco" | "ia";
+  creado_desde: "banco" | "ia" | "simulacro";
   alumnos_asignados: string[];
   tiempo_limite_minutos: number;
   ventana_disponibilidad: {
@@ -84,6 +182,7 @@ export interface Student {
   email_personal: string;
   phone: string;
   admission_date: string; // ISO Date string
+  graduation_date?: string; // ISO Date string (Added)
   level: "R1" | "R2" | "R3" | "Egresado"; // Calculado
   status: "Activo" | "Suspendido" | "Egresado";
   origin_university: string;
@@ -109,6 +208,13 @@ export interface Teacher {
   nationality: string;
   sex: "Masculino" | "Femenino" | "Otro";
   photo_url?: string;
+  subSpecialties?: string[]; // New field for specialties
+}
+
+export interface SubjectProcedure {
+    id: string;
+    name: string;
+    goal: number; // e.g. 10 ecografias
 }
 
 export interface Subject {
@@ -117,6 +223,8 @@ export interface Subject {
     code: string;
     lead_teacher_id: string; // ID del docente a cargo
     participating_teachers_ids: string[]; // IDs de docentes participantes
+    syllabus_url?: string; // URL to PDF
+    procedures?: SubjectProcedure[]; // Required procedures for the rotation
 }
 
 export interface BulletinEntry {
@@ -133,13 +241,15 @@ export interface BulletinEntry {
         links: string[];
     };
     priority: boolean;
+    visibility: 'public' | 'teachers' | 'residents'; // New field for visibility control
+    requiresConfirmation?: boolean; // New: RSVP
+    confirmedBy?: string[]; // New: List of student IDs who confirmed
 }
 
 export interface Answer {
     codigo_pregunta: string;
     respuesta: string;
     puntaje_obtenido: number;
-    // feedback_docente?: string; // Removed per simplification request
 }
 
 export interface Attempt {
@@ -173,6 +283,7 @@ export interface QuestionStats {
   docente_creador: string;
   successRate: number;
   totalAnswers: number;
+  distractorBreakdown: Record<string, number>; // { "A": 10, "B": 2, "C": 5... }
 }
 
 export interface QuizStats {
@@ -208,6 +319,8 @@ export interface Annotation {
     type: 'Positive' | 'Negative';
     content: string;
     date: string;
+    privacy?: 'Public' | 'Private'; // New: Visibility level
+    tags?: string[]; // New: AI suggested categories
 }
 
 export interface Activity {
@@ -220,6 +333,9 @@ export interface Activity {
     description: string;
     participantId: string;
     participantType: 'Student' | 'Teacher';
+    doi?: string; // New: DOI/PMID
+    certificateUrl?: string; // New: Proof URL
+    validationStatus?: 'Pending' | 'Validated'; // New: Coordinator check
 }
 
 // NEW INTERFACES FOR REGISTRATION SYSTEM
@@ -251,6 +367,11 @@ export interface Acta {
     teacherId: string;
     generatedAt: string;
     status: 'Pendiente' | 'Aceptada';
+    signature?: {
+        type: 'PIN' | 'Draw';
+        data: string; // "Verified" for PIN, Base64 for Draw
+        timestamp: string;
+    };
     content: {
         writtenGrade: number;
         competencyGrade: number;
@@ -260,4 +381,41 @@ export interface Acta {
         presentationDetails: Record<number, number>; // ID -> Score Snapshot
         writtenComment?: string;
     }
+}
+
+// NEW FOR RESIDENT TIMELINE & DOCS
+export interface TimelineEvent {
+    id: string;
+    date: string;
+    title: string;
+    description: string;
+    type: 'Academic' | 'Administrative' | 'Milestone';
+    status: 'Completed' | 'Pending' | 'Future';
+}
+
+// REPLACED StudentDocument with unified AppDocument
+export interface AppDocument {
+    id: string;
+    title: string;
+    type: string; // PDF, JPG, etc.
+    category: 'Legal' | 'Médico' | 'Académico' | 'Administrativo' | 'Programa';
+    uploadDate: string;
+    url?: string;
+    ownerType: 'Student' | 'Teacher' | 'Program';
+    ownerId?: string; // NULL if Program, otherwise StudentID or TeacherID
+    visibility: 'public' | 'teachers_only' | 'residents_only' | 'private'; 
+}
+
+// Keep generic type for compatibility if needed, or alias it
+export type StudentDocument = AppDocument;
+
+// NEW FOR PROCEDURE TRACKER
+export interface ProcedureLog {
+    id: string;
+    studentId: string;
+    subjectId: string;
+    procedureId: string;
+    count: number;
+    validatedCount: number;
+    status: 'Pending' | 'Validated';
 }

@@ -29,7 +29,8 @@ const EvaluationDashboard: React.FC<{
     onNavigate: (view: View) => void;
 }> = ({ stats, activeQuizzes, attempts, currentUserId, onStart, onNavigate }) => {
     
-    const isTeacher = currentUserId === 'DOCENTE';
+    // Check if Teacher or Admin
+    const isTeacher = currentUserId === 'DOCENTE' || currentUserId === '10611061';
     const effectiveUserId = isTeacher ? 'DOCENTE-PREVIEW' : currentUserId;
 
     return (
@@ -168,7 +169,8 @@ const EvaluationsModule: React.FC<EvaluationsModuleProps> = ({ currentUserId, st
     // Draft state for creating a quiz from the bank
     const [pendingQuizDraft, setPendingQuizDraft] = useState<Quiz | null>(null);
 
-    const isTeacher = currentUserId === 'DOCENTE';
+    // Permissions: Docente OR Admin (10611061)
+    const isTeacher = currentUserId === 'DOCENTE' || currentUserId === '10611061';
     const currentStudent = students.find(s => s.id === currentUserId);
 
     // Initial Data Fetch
@@ -359,19 +361,23 @@ const EvaluationsModule: React.FC<EvaluationsModuleProps> = ({ currentUserId, st
     }, [attempts, students]);
 
      const questionStats = useMemo<QuestionStats[]>(() => {
-        const statsMap = new Map<string, { correct: number; total: number }>();
+        const statsMap = new Map<string, { correct: number; total: number; distractors: Record<string, number> }>();
         attempts.forEach(attempt => {
-            if (attempt.estado === 'pendiente_revision') return;
-
+            // Include pending reviews for distractor analysis? Usually yes, raw answers.
             attempt.respuestas.forEach(answer => {
                 if (!statsMap.has(answer.codigo_pregunta)) {
-                    statsMap.set(answer.codigo_pregunta, { correct: 0, total: 0 });
+                    statsMap.set(answer.codigo_pregunta, { correct: 0, total: 0, distractors: {} });
                 }
                 const current = statsMap.get(answer.codigo_pregunta)!;
+                current.total++;
+                
+                // Track breakdown
+                const ans = answer.respuesta || "No Respondida";
+                current.distractors[ans] = (current.distractors[ans] || 0) + 1;
+
                 if (answer.puntaje_obtenido > 0) {
                     current.correct++;
                 }
-                current.total++;
             });
         });
 
@@ -384,6 +390,7 @@ const EvaluationsModule: React.FC<EvaluationsModuleProps> = ({ currentUserId, st
                 docente_creador: q.docente_creador,
                 successRate: stats && stats.total > 0 ? (stats.correct / stats.total) * 100 : 0,
                 totalAnswers: stats?.total || 0,
+                distractorBreakdown: stats?.distractors || {}
             };
         });
     }, [attempts, questions]);
@@ -461,7 +468,7 @@ const EvaluationsModule: React.FC<EvaluationsModuleProps> = ({ currentUserId, st
             />;
         }
 
-        // Student View (If not teacher)
+        // Student View (If not teacher and is a resident)
         if (!isTeacher && currentStudent) {
             return <StudentDashboard 
                 student={currentStudent}
@@ -526,7 +533,7 @@ const EvaluationsModule: React.FC<EvaluationsModuleProps> = ({ currentUserId, st
     return (
         <div className="flex flex-col h-full animate-fade-in-right">
              
-             {/* Internal Evaluation Navigation - Only for Teachers (Management View) */}
+             {/* Internal Evaluation Navigation - Only for Teachers/Admins (Management View) */}
              {view !== 'take_quiz' && isTeacher && (
                 <div className="bg-surface/50 border-b border-secondary/20 p-2 mb-4 rounded-lg flex gap-2 overflow-x-auto">
                      <button onClick={() => setView('dashboard')} className={`px-4 py-2 text-sm rounded-md font-medium transition-colors whitespace-nowrap ${view === 'dashboard' ? 'bg-primary text-white shadow' : 'hover:bg-secondary/20 text-text-secondary'}`}>Panel</button>

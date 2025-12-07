@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Quiz, Question, StudentStats, QuestionStats, QuizStats } from '../types';
 import { getGradeColor } from '../utils';
+import { ChartBarIcon } from './icons';
 
 type Tab = 'alumnos' | 'preguntas' | 'cuestionarios';
 
@@ -147,32 +148,68 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                            <table className="w-full text-sm text-left">
                                 <thead className="bg-secondary/20 sticky top-0 text-text-primary">
                                     <tr>
-                                        <th className="p-3 w-2/4 cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('enunciado')}>
+                                        <th className="p-3 w-5/12 cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('enunciado')}>
                                             Pregunta <SortIcon direction={sortConfig?.key === 'enunciado' ? sortConfig.direction : null} />
                                         </th>
                                         <th className="p-3 cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('especialidad')}>
                                             Especialidad <SortIcon direction={sortConfig?.key === 'especialidad' ? sortConfig.direction : null} />
                                         </th>
-                                        <th className="p-3 text-center cursor-pointer hover:bg-secondary/30" title="Cantidad de veces que ha sido respondida (indicador de uso)" onClick={() => handleSort('totalAnswers')}>
-                                            Intentos (Uso) <SortIcon direction={sortConfig?.key === 'totalAnswers' ? sortConfig.direction : null} />
+                                        <th className="p-3 text-center cursor-pointer hover:bg-secondary/30" title="Cantidad de veces que ha sido respondida" onClick={() => handleSort('totalAnswers')}>
+                                            Intentos <SortIcon direction={sortConfig?.key === 'totalAnswers' ? sortConfig.direction : null} />
                                         </th>
                                         <th className="p-3 text-center cursor-pointer hover:bg-secondary/30" onClick={() => handleSort('successRate')}>
                                             % Acierto <SortIcon direction={sortConfig?.key === 'successRate' ? sortConfig.direction : null} />
                                         </th>
+                                        <th className="p-3 text-center w-3/12">Análisis de Distractores</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredQuestionStats.map(q => (
-                                        <tr key={q.codigo_pregunta} className="border-b border-secondary/20 hover:bg-secondary/10">
-                                            <td className="p-3">
-                                                <p className="font-medium truncate" title={q.enunciado}>{q.enunciado}</p>
-                                                <p className="text-xs text-text-secondary font-mono">{q.codigo_pregunta}</p>
-                                            </td>
-                                            <td className="p-3 text-text-secondary">{q.especialidad}</td>
-                                            <td className="p-3 text-center font-semibold">{q.totalAnswers}</td>
-                                            <td className={`p-3 text-center font-semibold ${q.successRate < 40 ? 'text-danger' : q.successRate > 80 ? 'text-success' : ''}`}>{q.successRate.toFixed(1)}%</td>
-                                        </tr>
-                                    ))}
+                                    {filteredQuestionStats.map(q => {
+                                        // Calculate total valid answers to compute percentages
+                                        const total = Object.values(q.distractorBreakdown).reduce((a: number, b: number) => a + b, 0);
+                                        const originalQ = questions.find(qu => qu.codigo_pregunta === q.codigo_pregunta);
+                                        const correctOptionId = originalQ?.alternativas?.find(a => a.es_correcta)?.id || originalQ?.respuesta_correcta_vf;
+
+                                        return (
+                                            <tr key={q.codigo_pregunta} className="border-b border-secondary/20 hover:bg-secondary/10">
+                                                <td className="p-3">
+                                                    <p className="font-medium truncate max-w-xs" title={q.enunciado}>{q.enunciado}</p>
+                                                    <p className="text-xs text-text-secondary font-mono">{q.codigo_pregunta}</p>
+                                                </td>
+                                                <td className="p-3 text-text-secondary">{q.especialidad}</td>
+                                                <td className="p-3 text-center font-semibold">{q.totalAnswers}</td>
+                                                <td className={`p-3 text-center font-semibold ${q.successRate < 40 ? 'text-danger' : q.successRate > 80 ? 'text-success' : ''}`}>{q.successRate.toFixed(1)}%</td>
+                                                <td className="p-3">
+                                                    {total > 0 ? (
+                                                        <div className="flex gap-1 h-6 rounded overflow-hidden text-[10px] text-white font-bold bg-secondary/10 border border-secondary/20">
+                                                            {Object.entries(q.distractorBreakdown).map(([opt, count]) => {
+                                                                const countNum = count as number;
+                                                                const pct = (countNum / total) * 100;
+                                                                if (pct === 0) return null;
+                                                                const isCorrect = opt === correctOptionId;
+                                                                const isDistractor = !isCorrect && pct > 20; // Highlight problematic distractors
+                                                                return (
+                                                                    <div 
+                                                                        key={opt}
+                                                                        className={`flex items-center justify-center transition-all ${isCorrect ? 'bg-success' : 'bg-danger'} ${!isCorrect && !isDistractor ? 'opacity-40' : ''}`}
+                                                                        style={{ width: `${pct}%` }}
+                                                                        title={`${opt}: ${countNum} respuestas (${pct.toFixed(1)}%)`}
+                                                                    >
+                                                                        {pct > 15 ? opt : ''}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : <span className="text-xs text-text-secondary">Sin datos</span>}
+                                                    {originalQ && (
+                                                        <div className="flex justify-between mt-1 text-[10px] text-text-secondary">
+                                                            <span>Correcta: <span className="text-success font-bold">{correctOptionId}</span></span>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -229,7 +266,7 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
             
             <div className="border-b border-secondary/20">
                 <TabButton active={activeTab === 'alumnos'} onClick={() => setActiveTab('alumnos')}>Por Alumno</TabButton>
-                <TabButton active={activeTab === 'preguntas'} onClick={() => setActiveTab('preguntas')}>Por Pregunta</TabButton>
+                <TabButton active={activeTab === 'preguntas'} onClick={() => setActiveTab('preguntas')}>Por Pregunta (Distractores)</TabButton>
                 <TabButton active={activeTab === 'cuestionarios'} onClick={() => setActiveTab('cuestionarios')}>Por Cuestionario</TabButton>
             </div>
             

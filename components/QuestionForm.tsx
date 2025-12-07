@@ -35,6 +35,7 @@ const emptyQuestion: Omit<Question, 'codigo_pregunta' | 'fecha_creacion' | 'vece
     etiquetas: [],
     tiene_multimedia: false,
     rating: 0,
+    es_caso_del_dia: false,
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -298,6 +299,7 @@ const QuestionForm: React.FC<QuestionFormProps> = ({ isOpen, onClose, onSave, in
             veces_utilizada: initialQuestion?.veces_utilizada || 0,
             etiquetas: typeof question.etiquetas === 'string' ? (question.etiquetas as string).split(',').map((s: string) => s.trim()) : question.etiquetas,
             rating: question.rating || 0,
+            es_caso_del_dia: question.es_caso_del_dia || false,
         };
         onSave(finalQuestion);
     };
@@ -353,20 +355,34 @@ const QuestionForm: React.FC<QuestionFormProps> = ({ isOpen, onClose, onSave, in
                                     <label className={labelClass}>Tema Principal</label>
                                     <input type="text" name="tema" placeholder="Ej: Fisiopatología del Infarto Agudo de Miocardio" value={question.tema} onChange={handleChange} className={inputClass} />
                                 </div>
-                                <div>
-                                     <label className={labelClass}>Marcar como Favorito</label>
-                                     <div className="flex items-center gap-2 mt-2 px-3 py-1 border border-secondary/30 rounded-lg bg-background/50">
-                                        {[1, 2, 3].map((star) => (
-                                            <button
-                                                key={star}
-                                                type="button"
-                                                onClick={() => handleRatingChange(question.rating === star ? 0 : star as 1|2|3)}
-                                                className={`transition-colors hover:scale-110 ${star <= (question.rating || 0) ? 'text-yellow-400' : 'text-secondary/40 hover:text-yellow-200'}`}
-                                            >
-                                                <StarIcon className="h-6 w-6 fill-current" />
-                                            </button>
-                                        ))}
-                                        <span className="text-xs text-text-secondary ml-1">({question.rating || 0}/3)</span>
+                                <div className="flex-shrink-0">
+                                     <label className={labelClass}>Opciones Especiales</label>
+                                     <div className="flex items-center gap-4 mt-2 h-[42px]">
+                                        <div className="flex items-center gap-1 px-3 py-1.5 border border-secondary/30 rounded-lg bg-background/50 h-full">
+                                            {[1, 2, 3].map((star) => (
+                                                <button
+                                                    key={star}
+                                                    type="button"
+                                                    onClick={() => handleRatingChange(question.rating === star ? 0 : star as 1|2|3)}
+                                                    className={`transition-colors hover:scale-110 ${star <= (question.rating || 0) ? 'text-yellow-400' : 'text-secondary/40 hover:text-yellow-200'}`}
+                                                >
+                                                    <StarIcon className="h-5 w-5 fill-current" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                        
+                                        <label className={`flex items-center gap-2 cursor-pointer bg-background/50 border border-secondary/30 px-3 py-1.5 rounded-lg hover:border-primary/50 transition-colors h-full ${question.es_caso_del_dia ? 'border-accent bg-accent/10' : ''}`}>
+                                            <input
+                                                type="checkbox"
+                                                name="es_caso_del_dia"
+                                                checked={question.es_caso_del_dia || false}
+                                                onChange={(e) => setQuestion(prev => ({ ...prev, es_caso_del_dia: e.target.checked }))}
+                                                className="form-checkbox text-accent rounded focus:ring-accent h-4 w-4 bg-background border-secondary/50"
+                                            />
+                                            <span className={`text-sm font-medium flex items-center gap-1 ${question.es_caso_del_dia ? 'text-accent' : 'text-text-secondary'}`}>
+                                                <SparklesIcon className="h-4 w-4" /> Caso del Día
+                                            </span>
+                                        </label>
                                      </div>
                                 </div>
                             </div>

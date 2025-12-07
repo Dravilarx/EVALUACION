@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Student } from './types';
-import { StudentService } from './services/dataService';
+import { Student, UserRole, UserProfile, MODULE_PERMISSIONS } from './types';
+import { StudentService, LogService } from './services/dataService';
 import EvaluationsModule from './components/EvaluationsModule';
 import ResidentsModule from './components/ResidentsModule';
 import TeachersModule from './components/TeachersModule';
@@ -14,13 +14,16 @@ import TeachersFolder from './components/TeachersFolder';
 import ResidentsFolder from './components/ResidentsFolder';
 import AnnotationsModule from './components/AnnotationsModule'; 
 import ActivitiesModule from './components/ActivitiesModule'; 
-import GradesModule from './components/GradesModule'; // Import GradesModule
+import GradesModule from './components/GradesModule'; 
+import AuditLog from './components/AuditLog'; 
+import AdminPanel from './components/AdminPanel'; 
+import MessagingModule from './components/MessagingModule';
+import DocumentsModule from './components/DocumentsModule'; // Imported
 import Layout from './components/Layout';
-// import Login from './components/Login'; // Login disabled for testing
 import Dashboard from './components/Dashboard';
-import { DocumentTextIcon } from './components/icons';
+import { DocumentTextIcon, ShieldExclamationIcon, MailIcon, PaperAirplaneIcon } from './components/icons';
 
-// Mock Placeholders for new sections
+// Mock Placeholders
 const PlaceholderModule: React.FC<{ title: string; description: string; icon: React.ReactNode }> = ({ title, description, icon }) => (
     <div className="h-full flex flex-col items-center justify-center text-center opacity-60 animate-fade-in-up">
         <div className="mb-6 p-6 bg-surface rounded-full border border-secondary/20 shadow-xl text-primary">
@@ -32,14 +35,79 @@ const PlaceholderModule: React.FC<{ title: string; description: string; icon: Re
     </div>
 );
 
-type Module = 'dashboard' | 'subjects' | 'residents' | 'teachers' | 'news' | 'evaluations' | 'residents_folder' | 'teachers_folder' | 'surveys' | 'presentation' | 'documents' | 'poll' | 'annotations' | 'activities' | 'grades';
+// Change Requests module updated to link to messaging
+const ChangeRequestModule: React.FC<{ onCreateRequest: () => void }> = ({ onCreateRequest }) => (
+    <div className="space-y-6 animate-fade-in-up">
+        <div className="bg-surface p-6 rounded-xl border border-secondary/20 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h2 className="text-2xl font-bold text-text-primary flex items-center gap-2">
+                    <ShieldExclamationIcon className="h-6 w-6 text-warning" /> Solicitudes de Cambio
+                </h2>
+                <p className="text-sm text-text-secondary mt-1 max-w-2xl">
+                    Utilice este módulo para solicitar formalmente la eliminación o modificación de registros académicos sensibles (notas, asistencia, anotaciones). 
+                    Todas las solicitudes se gestionan a través del sistema de mensajería interna seguro y son auditadas por la administración.
+                </p>
+            </div>
+            <button 
+                onClick={onCreateRequest}
+                className="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl font-bold shadow-lg transition-transform hover:scale-105 flex items-center gap-2"
+            >
+                <PaperAirplaneIcon className="h-5 w-5" /> Crear Nueva Solicitud
+            </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="col-span-2 bg-surface rounded-xl border border-secondary/20 p-8 flex flex-col items-center justify-center text-center min-h-[300px]">
+                <div className="bg-secondary/10 p-4 rounded-full mb-4">
+                    <MailIcon className="h-10 w-10 text-secondary" />
+                </div>
+                <h3 className="text-lg font-bold text-text-primary mb-2">Buzón de Solicitudes</h3>
+                <p className="text-text-secondary mb-6 max-w-md">
+                    Sus solicitudes activas y el historial de respuestas se encuentran en su buzón de mensajería.
+                </p>
+                <button 
+                    onClick={onCreateRequest} 
+                    className="text-primary font-bold hover:underline"
+                >
+                    Ir a Mensajería
+                </button>
+            </div>
+
+            <div className="bg-surface p-6 rounded-xl border border-secondary/20">
+                <h3 className="font-bold text-text-primary mb-4 border-b border-secondary/10 pb-2">Instrucciones</h3>
+                <ul className="text-sm text-text-secondary space-y-3 list-disc list-inside">
+                    <li>Indique claramente el <strong>ID del registro</strong> afectado (ej: Evaluación #123).</li>
+                    <li>Justifique el motivo del cambio (ej: Error de digitación, Re-calificación).</li>
+                    <li>Adjunte evidencia si es necesario.</li>
+                    <li>El administrador revisará su solicitud y responderá en un plazo de 48 horas hábiles.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+);
+
+type Module = 'dashboard' | 'subjects' | 'residents' | 'teachers' | 'news' | 'evaluations' | 'residents_folder' | 'teachers_folder' | 'surveys' | 'presentation' | 'documents' | 'poll' | 'annotations' | 'activities' | 'grades' | 'audit_log' | 'admin_panel' | 'change_requests' | 'messaging';
+
+// Initial Admin User
+const ADMIN_USER: UserProfile = {
+    id: '10611061',
+    name: 'Marcelo Avila',
+    email: 'marcelo.avila@uantof.cl',
+    roles: ['ADMIN', 'TEACHER'],
+    activeRole: 'ADMIN'
+};
+
+const TEACHER_USER: UserProfile = {
+    id: 'DOCENTE',
+    name: 'Docente Genérico',
+    email: 'docente@ua.cl',
+    roles: ['TEACHER'],
+    activeRole: 'TEACHER'
+};
 
 const App: React.FC = () => {
-    // Session State - Login Disabled for Testing
-    // const [isAuthenticated, setIsAuthenticated] = useState(false);
-    
-    // Default to DOCENTE (Teacher) for clean dev experience
-    const [currentUserId, setCurrentUserId] = useState<string>('DOCENTE'); 
+    // Current User State
+    const [currentUser, setCurrentUser] = useState<UserProfile>(ADMIN_USER);
     
     // Data State
     const [students, setStudents] = useState<Student[]>([]);
@@ -48,11 +116,14 @@ const App: React.FC = () => {
     const [activeModule, setActiveModule] = useState<Module>('dashboard');
     const [darkMode, setDarkMode] = useState(false);
     
-    // Deep linking / Navigation Params State
+    // Deep linking Params
     const [targetQuizId, setTargetQuizId] = useState<string | null>(null);
     const [targetSurveyId, setTargetSurveyId] = useState<string | null>(null);
     const [evalParams, setEvalParams] = useState<{ studentId: string; subjectId: string } | null>(null);
     
+    // Messaging Draft State (For Change Requests)
+    const [messagingDraft, setMessagingDraft] = useState<{ recipients: string[], subject: string, content: string } | null>(null);
+
     // Initial Load
     useEffect(() => {
         const fetchStudents = async () => {
@@ -60,6 +131,16 @@ const App: React.FC = () => {
             setStudents(data);
         };
         fetchStudents();
+
+        // Log initial login
+        LogService.logAction({
+            action: 'LOGIN',
+            module: 'System',
+            details: 'Initial system load',
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userRole: currentUser.activeRole
+        });
 
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             setDarkMode(true);
@@ -76,10 +157,17 @@ const App: React.FC = () => {
     }, [darkMode]);
 
     const handleLogout = () => {
-        // Reset to default instead of logging out
-        setCurrentUserId('DOCENTE');
+        setCurrentUser(ADMIN_USER);
         setActiveModule('dashboard');
-        alert("Sesión reiniciada a Docente Coordinador.");
+        alert("Sesión reiniciada a Administrador por defecto.");
+        LogService.logAction({
+            action: 'LOGIN',
+            module: 'Auth',
+            details: 'Session reset to default Admin',
+            userId: ADMIN_USER.id,
+            userName: ADMIN_USER.name,
+            userRole: ADMIN_USER.activeRole
+        });
     };
 
     const handleNavigateToPoll = (processId: string) => {
@@ -87,39 +175,93 @@ const App: React.FC = () => {
         setActiveModule('poll');
     };
 
-    // Handler to switch module and start quiz
     const handleStartQuizFromFolder = (quizId: string) => {
         setTargetQuizId(quizId);
         setActiveModule('evaluations');
     };
 
-    // Handler to jump to specific evaluation forms
     const handleGoToEvaluationForm = (module: 'surveys' | 'presentation', studentId: string, subjectId: string) => {
         setEvalParams({ studentId, subjectId });
         setActiveModule(module);
     };
 
-    // Dev Mode User Switcher
-    const handleUserChange = (newUserId: string) => {
-        setCurrentUserId(newUserId);
+    const handleCreateChangeRequest = () => {
+        // Pre-fill message for Admin
+        setMessagingDraft({
+            recipients: ['10611061'], // Marcelo Avila ID (Admin)
+            subject: 'Solicitud de Cambio: [Indicar Tema]',
+            content: 'Estimado Administrador,\n\nSolicito la siguiente modificación en el sistema:\n\n- Tipo de Registro: \n- ID o Detalle: \n- Motivo: \n\nAtentamente,\n' + currentUser.name
+        });
+        setActiveModule('messaging');
     };
 
-    // Role Logic
-    const isTeacher = currentUserId === 'DOCENTE';
+    // User Switcher Logic
+    const handleUserChange = (selection: string) => {
+        let newUser: UserProfile;
+
+        if (selection === 'ADMIN') {
+            newUser = ADMIN_USER;
+        } else if (selection === 'TEACHER') {
+            newUser = TEACHER_USER;
+        } else {
+            // Assume Resident ID
+            const student = students.find(s => s.id === selection);
+            if (student) {
+                newUser = {
+                    id: student.id,
+                    name: student.name,
+                    email: student.email_ua,
+                    roles: ['RESIDENT'],
+                    activeRole: 'RESIDENT'
+                };
+            } else {
+                return; // Error finding student
+            }
+        }
+
+        setCurrentUser(newUser);
+        
+        // Security Check: Redirect if current module is forbidden for new role
+        const allowedRoles = MODULE_PERMISSIONS[activeModule];
+        if (!allowedRoles || !allowedRoles.includes(newUser.activeRole)) {
+            setActiveModule('dashboard');
+        }
+
+        LogService.logAction({
+            action: 'LOGIN',
+            module: 'Auth',
+            details: `Switched user context to ${newUser.name} (${newUser.activeRole})`,
+            userId: newUser.id,
+            userName: newUser.name,
+            userRole: newUser.activeRole
+        });
+    };
 
     // Route Rendering
     const renderModule = () => {
+        // Security Check: Ensure module is allowed
+        const allowedRoles = MODULE_PERMISSIONS[activeModule];
+        if (!allowedRoles || !allowedRoles.includes(currentUser.activeRole)) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full text-text-secondary animate-fade-in">
+                    <ShieldExclamationIcon className="h-16 w-16 mb-4 text-danger opacity-50" />
+                    <h2 className="text-xl font-bold">Acceso Denegado</h2>
+                    <p>No tiene permisos para acceder a este módulo.</p>
+                </div>
+            );
+        }
+
         switch (activeModule) {
             case 'evaluations':
                 return <EvaluationsModule 
-                    currentUserId={currentUserId} 
+                    currentUserId={currentUser.id} 
                     students={students} 
                     initialQuizId={targetQuizId}
                     onClearInitialQuizId={() => setTargetQuizId(null)}
                 />;
             case 'dashboard':
                 return <Dashboard 
-                    currentUserId={currentUserId}
+                    currentUserId={currentUser.id}
                     onNavigate={(module) => setActiveModule(module as Module)}
                 />;
             case 'subjects':
@@ -127,52 +269,63 @@ const App: React.FC = () => {
             case 'teachers':
                 return <TeachersModule />;
             case 'residents':
-                return <ResidentsModule currentUserId={currentUserId} />; // Pass prop
+                return <ResidentsModule currentUserId={currentUser.id} />;
             case 'news':
-                return <NewsModule />;
+                return <NewsModule students={students} currentUserId={currentUser.id} />;
             case 'surveys':
                 return <SurveysModule 
-                    currentUserId={currentUserId} 
+                    currentUserId={currentUser.id} 
                     initialStudentId={evalParams?.studentId}
                     initialSubjectId={evalParams?.subjectId}
                     onClearParams={() => setEvalParams(null)}
                 />;
             case 'presentation':
                 return <PresentationModule 
-                    currentUserId={currentUserId}
+                    currentUserId={currentUser.id}
                     initialStudentId={evalParams?.studentId}
                     initialSubjectId={evalParams?.subjectId}
                     onClearParams={() => setEvalParams(null)}
                 />;
-            case 'grades': // New route
-                return <GradesModule currentUserId={currentUserId} />;
+            case 'grades': 
+                return <GradesModule currentUserId={currentUser.id} />;
             case 'poll':
                 return <PollModule 
-                    currentUserId={currentUserId}
+                    currentUserId={currentUser.id}
                     initialSurveyId={targetSurveyId}
                     onClearInitialSurveyId={() => setTargetSurveyId(null)}
-                    onComplete={() => {
-                        // We stay in the poll module to show the repository
-                    }} 
+                    onComplete={() => {}} 
                 />;
             case 'residents_folder':
                 return <ResidentsFolder 
-                    currentUserId={currentUserId} 
+                    currentUserId={currentUser.id} 
                     onNavigateToPoll={handleNavigateToPoll}
                     onGoToEvaluations={() => setActiveModule('evaluations')}
                     onStartQuiz={handleStartQuizFromFolder}
                 />;
              case 'teachers_folder':
                 return <TeachersFolder 
-                    currentUserId={currentUserId} 
+                    currentUserId={currentUser.id} 
                     onNavigateToEvaluation={handleGoToEvaluationForm}
                 />;
              case 'annotations':
-                return <AnnotationsModule currentUserId={currentUserId} />;
+                return <AnnotationsModule currentUserId={currentUser.id} />;
              case 'activities':
-                return <ActivitiesModule currentUserId={currentUserId} />;
+                return <ActivitiesModule currentUserId={currentUser.id} />;
              case 'documents':
-                return <PlaceholderModule title="Documentos" description="Biblioteca de documentos institucionales y normativas." icon={<DocumentTextIcon className="h-12 w-12"/>} />;
+                return <DocumentsModule />;
+             case 'audit_log':
+                return <AuditLog />;
+             case 'admin_panel':
+                return <AdminPanel />;
+             case 'change_requests':
+                return <ChangeRequestModule onCreateRequest={handleCreateChangeRequest} />;
+             case 'messaging':
+                return <MessagingModule 
+                    currentUserId={currentUser.id} 
+                    currentUserName={currentUser.name} 
+                    initialDraft={messagingDraft}
+                    onClearDraft={() => setMessagingDraft(null)}
+                />;
             default:
                 return <div>Módulo no encontrado</div>;
         }
@@ -182,13 +335,12 @@ const App: React.FC = () => {
         <Layout 
             activeModule={activeModule}
             setActiveModule={setActiveModule}
-            currentUser={currentUserId}
-            isTeacher={isTeacher}
+            currentUser={currentUser}
             students={students}
             onLogout={handleLogout}
             darkMode={darkMode}
             toggleDarkMode={() => setDarkMode(!darkMode)}
-            onUserChange={handleUserChange} // Pass switcher handler
+            onUserChange={handleUserChange}
         >
             {renderModule()}
         </Layout>

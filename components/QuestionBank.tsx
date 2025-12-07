@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Question, QuestionType } from '../types';
 import QuestionForm from './QuestionForm';
-import { PlusIcon, FilterIcon, ImageIcon, VideoIcon, LinkIcon, EditIcon, StarIcon, TrashIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
+import { PlusIcon, FilterIcon, ImageIcon, VideoIcon, LinkIcon, EditIcon, StarIcon, TrashIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, SparklesIcon } from './icons';
 import { ESPECIALIDADES, DIFICULTADES, TIPOS_PREGUNTA } from '../constants';
 
 const ITEMS_PER_PAGE = 12;
@@ -52,9 +52,17 @@ const QuestionCard: React.FC<QuestionCardProps> = ({ question, onEdit, onToggleS
         onToggleStar(question, newRating);
     };
 
+    // Identify questions with low usage (potential candidates for review/improvement)
+    const needsReview = (question.veces_utilizada || 0) < 5;
+
     return (
         <div 
-            className={`group relative flex flex-col bg-surface rounded-xl shadow-sm hover:shadow-xl border transition-all duration-300 overflow-hidden ${isSelected ? 'border-primary ring-1 ring-primary' : 'border-secondary/20 hover:border-primary/50'}`}
+            className={`group relative flex flex-col bg-surface rounded-xl shadow-sm hover:shadow-xl border transition-all duration-300 overflow-hidden 
+                ${isSelected 
+                    ? 'border-primary ring-1 ring-primary' 
+                    : needsReview 
+                        ? 'border-orange-300/60 hover:border-orange-400' 
+                        : 'border-secondary/20 hover:border-primary/50'}`}
             onClick={() => onToggleSelect(question.codigo_pregunta)}
         >
             {/* Selection Overlay/Checkbox */}
@@ -64,8 +72,24 @@ const QuestionCard: React.FC<QuestionCardProps> = ({ question, onEdit, onToggleS
                 </div>
             </div>
 
+            {/* Low Usage Indicator */}
+            {needsReview && (
+                <div className="absolute top-0 left-0 z-20 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-br-lg border-b border-r border-orange-200 flex items-center gap-1 shadow-sm" title="Utilizada menos de 5 veces. Se sugiere revisar para asegurar calidad.">
+                    <SparklesIcon className="h-3 w-3 text-orange-500" />
+                    <span>Sugerencia: Revisar</span>
+                </div>
+            )}
+
+            {/* Case of the Day Indicator */}
+            {question.es_caso_del_dia && (
+                <div className={`absolute top-0 ${needsReview ? 'left-[130px]' : 'left-0'} z-20 bg-accent/10 text-accent text-[10px] font-bold px-2 py-1 rounded-br-lg border-b border-r border-accent/20 flex items-center gap-1 shadow-sm`}>
+                    <SparklesIcon className="h-3 w-3" />
+                    <span>Caso del Día</span>
+                </div>
+            )}
+
             {/* Card Header */}
-            <div className="p-4 flex justify-between items-start pb-2 pr-10">
+            <div className={`p-4 flex justify-between items-start pb-2 pr-10 ${needsReview || question.es_caso_del_dia ? 'pt-8' : ''}`}>
                 <div className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${typeStyle.bg} ${typeStyle.text} ${typeStyle.border}`}>
                     {typeStyle.label}
                 </div>
@@ -111,12 +135,13 @@ const QuestionCard: React.FC<QuestionCardProps> = ({ question, onEdit, onToggleS
             </div>
 
             {/* Card Footer */}
-            <div className="mt-auto bg-secondary/5 border-t border-secondary/20 p-3 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+            <div className={`mt-auto p-3 flex items-center justify-between border-t transition-colors ${needsReview ? 'bg-orange-50/50 border-orange-200/50' : 'bg-secondary/5 border-secondary/20'}`} onClick={(e) => e.stopPropagation()}>
                 <div className="flex flex-col text-xs text-text-secondary">
                     <span className="font-semibold text-text-primary">{question.especialidad}</span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                          <span>Dif: <span className={(question.dificultad >= 4 ? 'text-warning' : 'text-success')}>{question.dificultad}/5</span></span>
-                         <span className="text-text-secondary truncate max-w-[80px]" title={question.docente_creador}>{question.docente_creador}</span>
+                         <span className="text-secondary/50">•</span>
+                         <span title="Veces utilizada en cuestionarios">Uso: {question.veces_utilizada || 0}</span>
                     </div>
                 </div>
 

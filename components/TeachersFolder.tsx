@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Teacher, Annotation, Activity, Student, Subject, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation } from '../types';
-import { TeacherService, AnnotationService, ActivityService, StudentService, SubjectService, QuizService, AttemptService, CompetencyService, PresentationService } from '../services/dataService';
-import { FolderIcon, BriefcaseIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, ClipboardCheckIcon, ChartBarIcon, ScreenIcon, ArrowUpRightIcon, CheckCircleIcon, BellIcon } from './icons';
+import { Teacher, Annotation, Activity, Student, Subject, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation, SurveyResult } from '../types';
+import { TeacherService, AnnotationService, ActivityService, StudentService, SubjectService, QuizService, AttemptService, CompetencyService, PresentationService, SurveyService } from '../services/dataService';
+import { FolderIcon, BriefcaseIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, ClipboardCheckIcon, ChartBarIcon, ScreenIcon, ArrowUpRightIcon, CheckCircleIcon, BellIcon, CalendarIcon } from './icons';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface TeachersFolderProps {
     currentUserId: string;
@@ -22,21 +23,25 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
     const [attempts, setAttempts] = useState<Attempt[]>([]);
     const [competencies, setCompetencies] = useState<CompetencyEvaluation[]>([]);
     const [presentations, setPresentations] = useState<PresentationEvaluation[]>([]);
+    const [surveys, setSurveys] = useState<SurveyResult[]>([]);
     
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [activeTab, setActiveTab] = useState<'pending' | 'annotations' | 'activities'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'annotations' | 'activities' | 'mentorship' | 'feedback'>('pending');
+
+    // Mentorship Mock State
+    const [availability, setAvailability] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         const loadData = async () => {
-            const [tData, sData, subData, qData, aData, cData, pData] = await Promise.all([
+            const [tData, sData, subData, qData, aData, cData, pData, survData] = await Promise.all([
                 TeacherService.getAll(),
                 StudentService.getAll(),
                 SubjectService.getAll(),
                 QuizService.getAll(),
                 AttemptService.getAll(),
                 CompetencyService.getAll(),
-                PresentationService.getAll()
+                PresentationService.getAll(),
+                SurveyService.getAll()
             ]);
             setTeachers(tData);
             setStudents(sData);
@@ -45,6 +50,7 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
             setAttempts(aData);
             setCompetencies(cData);
             setPresentations(pData);
+            setSurveys(survData);
             setLoading(false);
         };
         loadData();
@@ -59,15 +65,14 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                 ]);
                 setAnnotations(notes);
                 setActivities(acts);
+                // Reset availability for demo
+                setAvailability({});
             }
         };
         loadDetails();
     }, [selectedTeacher]);
 
-    const filteredTeachers = teachers.filter(t => t.name.toLowerCase().includes(searchTerm.toLowerCase()));
-
     // Logic to calculate Pending Evaluations
-    // Trigger: When a Written Grade (Quiz) exists for a student in a subject.
     const pendingEvaluations = useMemo(() => {
         if (!selectedTeacher) return [];
 
@@ -79,27 +84,19 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
             missingType: 'Competency' | 'Presentation';
         }> = [];
 
-        // Iterate over all subjects
         subjects.forEach(subject => {
-            // Check if teacher is involved (Lead or Participant)
             const isLead = subject.lead_teacher_id === selectedTeacher.id;
             const isParticipant = subject.participating_teachers_ids.includes(selectedTeacher.id);
             
-            // Only show pending tasks if the selected teacher is involved in the subject
-            // OR if the current user is 'DOCENTE' (Super Admin view) inspecting any teacher.
             if (isLead || isParticipant || currentUserId === 'DOCENTE') {
-                
-                // Identify Students who have started the written part (Trigger)
                 const subjectQuizzes = quizzes.filter(q => q.asignatura === subject.name || q.asignatura === "Interdisciplinario");
                 
                 students.forEach(student => {
-                    // Check for Written Grade
                     const hasWrittenGrade = subjectQuizzes.some(quiz => 
                         attempts.some(a => a.id_cuestionario === quiz.id_cuestionario && a.alumno_id === student.id && (a.estado === 'entregado' || a.estado === 'pendiente_revision'))
                     );
 
                     if (hasWrittenGrade) {
-                        // Check Missing Competencies
                         const hasCompetency = competencies.some(c => c.studentId === student.id && c.subjectId === subject.id);
                         if (!hasCompetency) {
                             pendingItems.push({
@@ -111,7 +108,6 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                             });
                         }
 
-                        // Check Missing Presentation
                         const hasPresentation = presentations.some(p => p.studentId === student.id && p.subjectId === subject.id);
                         if (!hasPresentation) {
                             pendingItems.push({
@@ -130,41 +126,67 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
         return pendingItems;
     }, [selectedTeacher, subjects, students, quizzes, attempts, competencies, presentations, currentUserId]);
 
+    // Feedback Chart Data
+    const feedbackData = useMemo(() => {
+        if (!selectedTeacher) return [];
+        // Filter surveys for this teacher
+        const teacherSurveys = surveys.filter(s => s.teacherId === selectedTeacher.id && s.status !== 'Pending');
+        
+        // Mocking monthly aggregation for demo since dates are mostly current
+        const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'];
+        return months.map(month => {
+            // Generate pseudo-random average between 4.0 and 7.0 for visualization
+            const base = 5.5;
+            const variation = (Math.random() * 2) - 1; 
+            return {
+                name: month,
+                rating: parseFloat((base + variation).toFixed(1))
+            };
+        });
+    }, [selectedTeacher, surveys]);
+
+    const toggleAvailability = (day: string, hour: string) => {
+        const key = `${day}-${hour}`;
+        setAvailability(prev => ({
+            ...prev,
+            [key]: !prev[key]
+        }));
+    };
+
+    const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie'];
+    const hours = ['08:00', '09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00'];
 
     return (
         <div className="flex flex-col gap-6 h-[calc(100vh-100px)] animate-fade-in-up">
             
             {/* Top Selection Panel */}
-            <div className="w-full bg-surface rounded-xl shadow-sm border border-secondary/20 flex flex-col flex-shrink-0 max-h-[30vh]">
-                <div className="p-3 border-b border-secondary/20 bg-background/50 flex flex-col sm:flex-row justify-between items-center gap-3">
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                        <BriefcaseIcon className="h-5 w-5 text-primary" /> Docentes
-                    </h2>
-                    <input 
-                        type="text" 
-                        placeholder="Buscar docente..." 
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full sm:w-64 bg-background border border-secondary/30 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary outline-none"
-                    />
+            <div className="w-full bg-surface rounded-xl shadow-sm border border-secondary/20 p-4 flex flex-col md:flex-row items-center justify-between gap-4 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                        <BriefcaseIcon className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-text-primary">Carpeta Docente</h2>
+                        <p className="text-sm text-text-secondary">Seleccione un docente para revisar su actividad</p>
+                    </div>
                 </div>
-                <div className="overflow-y-auto p-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                    {loading ? <p className="col-span-full text-center p-4 text-text-secondary">Cargando...</p> : 
-                     filteredTeachers.map(teacher => (
-                        <button
-                            key={teacher.id}
-                            onClick={() => setSelectedTeacher(teacher)}
-                            className={`text-left p-3 rounded-lg flex items-center gap-3 transition-colors border ${selectedTeacher?.id === teacher.id ? 'bg-primary text-white border-primary shadow-md' : 'bg-background hover:bg-secondary/10 text-text-primary border-transparent hover:border-secondary/20'}`}
-                        >
-                            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-xs ${selectedTeacher?.id === teacher.id ? 'bg-white text-primary' : 'bg-primary/10 text-primary'}`}>
-                                {teacher.name.charAt(0)}
-                            </div>
-                            <div className="overflow-hidden">
-                                <p className="text-sm font-bold truncate">{teacher.name}</p>
-                                <p className={`text-xs truncate ${selectedTeacher?.id === teacher.id ? 'text-white/80' : 'text-text-secondary'}`}>{teacher.rank}</p>
-                            </div>
-                        </button>
-                    ))}
+                
+                <div className="w-full md:w-80">
+                    <select
+                        className="w-full p-2.5 bg-background border border-secondary/30 rounded-lg outline-none focus:ring-2 focus:ring-primary text-text-primary shadow-sm"
+                        value={selectedTeacher?.id || ''}
+                        onChange={(e) => {
+                            const teacher = teachers.find(t => t.id === e.target.value);
+                            setSelectedTeacher(teacher || null);
+                        }}
+                    >
+                        <option value="">-- Seleccionar Docente --</option>
+                        {teachers.map(t => (
+                            <option key={t.id} value={t.id}>
+                                {t.name}
+                            </option>
+                        ))}
+                    </select>
                 </div>
             </div>
 
@@ -181,9 +203,12 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                                 <div className="flex-grow">
                                     <h2 className="text-2xl font-bold text-text-primary">{selectedTeacher.name}</h2>
                                     <p className="text-text-secondary">{selectedTeacher.rank}</p>
-                                    <div className="flex gap-2 mt-2">
+                                    <div className="flex gap-2 mt-2 flex-wrap">
                                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs font-bold">{selectedTeacher.contract_hours} Hrs</span>
                                         <span className="bg-secondary/10 text-text-secondary px-2 py-0.5 rounded text-xs">{selectedTeacher.email_ua}</span>
+                                        {selectedTeacher.subSpecialties?.map(sub => (
+                                            <span key={sub} className="bg-cyan-50 text-cyan-600 border border-cyan-100 px-2 py-0.5 rounded text-xs">{sub}</span>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -208,6 +233,18 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                                 >
                                     Extensión
                                 </button>
+                                <button 
+                                    onClick={() => setActiveTab('mentorship')}
+                                    className={`pb-2 px-1 text-sm font-bold transition-colors border-b-2 whitespace-nowrap ${activeTab === 'mentorship' ? 'border-purple-600 text-purple-600' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                                >
+                                    Mentoría
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('feedback')}
+                                    className={`pb-2 px-1 text-sm font-bold transition-colors border-b-2 whitespace-nowrap ${activeTab === 'feedback' ? 'border-orange-500 text-orange-500' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                                >
+                                    Evolución Docente
+                                </button>
                             </div>
                         </div>
 
@@ -215,7 +252,7 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                         <div className="flex-grow overflow-y-auto p-6 bg-background/30">
                             
                             {/* Notification Banner */}
-                            {pendingEvaluations.length > 0 && (
+                            {pendingEvaluations.length > 0 && activeTab !== 'pending' && (
                                 <div className="mb-6 bg-warning/10 border border-warning/30 p-4 rounded-xl flex items-start gap-4 shadow-sm animate-fade-in-down">
                                     <div className="p-2 bg-warning/20 rounded-full text-warning shrink-0">
                                         <BellIcon className="h-6 w-6" />
@@ -287,6 +324,78 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                                         </div>
                                     )}
                                 </>
+                            )}
+
+                            {/* Mentorship Calendar Tab */}
+                            {activeTab === 'mentorship' && (
+                                <div className="animate-fade-in-up">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="font-bold text-lg text-text-primary flex items-center gap-2">
+                                            <CalendarIcon className="h-5 w-5 text-purple-600" /> Disponibilidad para Mentoría
+                                        </h3>
+                                        <div className="text-xs text-text-secondary flex gap-4">
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-purple-500 rounded"></div> Disponible</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-secondary/10 rounded border border-secondary/20"></div> No Disponible</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="overflow-x-auto">
+                                        <div className="min-w-[600px] grid grid-cols-6 gap-2">
+                                            <div className="p-2"></div> {/* Corner */}
+                                            {days.map(day => (
+                                                <div key={day} className="text-center font-bold text-text-secondary py-2">{day}</div>
+                                            ))}
+                                            
+                                            {hours.map(hour => (
+                                                <React.Fragment key={hour}>
+                                                    <div className="text-right pr-4 text-xs font-mono text-text-secondary py-3">{hour}</div>
+                                                    {days.map(day => {
+                                                        const key = `${day}-${hour}`;
+                                                        const isAvail = availability[key];
+                                                        return (
+                                                            <button
+                                                                key={key}
+                                                                onClick={() => toggleAvailability(day, hour)}
+                                                                className={`rounded-lg transition-all border ${isAvail ? 'bg-purple-500 border-purple-600 shadow-sm' : 'bg-surface border-secondary/20 hover:bg-secondary/10'}`}
+                                                            >
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </React.Fragment>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-text-secondary mt-4 text-center">
+                                        * Haz clic en los bloques para marcar disponibilidad. Los residentes podrán solicitar estos horarios.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Feedback Chart Tab */}
+                            {activeTab === 'feedback' && (
+                                <div className="animate-fade-in-up h-full flex flex-col">
+                                    <h3 className="font-bold text-lg text-text-primary mb-6 flex items-center gap-2">
+                                        <ChartBarIcon className="h-5 w-5 text-orange-500" /> Evolución de Calificación Docente
+                                    </h3>
+                                    
+                                    <div className="bg-surface p-6 rounded-xl border border-secondary/20 shadow-sm flex-grow min-h-[300px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={feedbackData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
+                                                <YAxis domain={[1, 7]} axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
+                                                <Tooltip 
+                                                    cursor={{fill: '#f1f5f9'}}
+                                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                />
+                                                <Bar dataKey="rating" fill="#f97316" radius={[4, 4, 0, 0]} barSize={40} name="Calificación Promedio" />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <p className="text-xs text-text-secondary mt-4 text-center">
+                                        Promedio mensual basado en encuestas estudiantiles anónimas (Escala 1.0 - 7.0).
+                                    </p>
+                                </div>
                             )}
 
                             {/* Annotations Tab */}

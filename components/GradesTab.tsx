@@ -42,8 +42,8 @@ interface GradeRow {
 const GradesTab: React.FC<GradesTabProps> = ({ 
     students, quizzes, attempts, competencies, presentations, subjects, teachers, currentUserId, onGenerateActa, existingActas
 }) => {
-    // Determine Role
-    const isTeacher = currentUserId === 'DOCENTE';
+    // Determine Role: Admin or Teacher
+    const isTeacher = currentUserId === 'DOCENTE' || currentUserId === '10611061';
 
     // Filters
     const [filterStudent, setFilterStudent] = useState('');

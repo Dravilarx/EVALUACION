@@ -28,3 +28,29 @@ export const getGradeColor = (grade: number): string => {
     if (grade >= 4.0) return "text-primary"; // Blue/Primary for passing
     return "text-danger"; // Red for failing
 };
+
+export const exportToCSV = (data: any[], filename: string) => {
+    if (!data.length) {
+        alert("No hay datos para exportar.");
+        return;
+    }
+    const headers = Object.keys(data[0]);
+    const csvRows = [
+        headers.join(','),
+        ...data.map(row => headers.map(fieldName => {
+            const val = (row as any)[fieldName];
+            // Escape double quotes and wrap in double quotes to handle commas/newlines
+            const escaped = ('' + (val ?? '')).replace(/"/g, '""');
+            return `"${escaped}"`;
+        }).join(','))
+    ];
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `${filename}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};

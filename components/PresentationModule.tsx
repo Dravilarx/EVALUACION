@@ -1,10 +1,11 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ScreenIcon, CheckCircleIcon, UsersIcon, BookOpenIcon, PlusIcon, SparklesIcon } from './icons';
+import { ScreenIcon, CheckCircleIcon, UsersIcon, BookOpenIcon, PlusIcon, SparklesIcon, EditIcon, TrashIcon } from './icons';
 import { PRESENTATION_CRITERIA_LIST, EVALUATION_SCALE } from '../constants';
 import { Student, Subject, PresentationEvaluation } from '../types';
 import { StudentService, SubjectService, PresentationService } from '../services/dataService';
 import { generateEvaluationScores } from '../services/geminiService';
+import VoiceTextarea from './VoiceTextarea';
 
 interface PresentationModuleProps {
     currentUserId: string;
@@ -20,12 +21,16 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
     const [evaluations, setEvaluations] = useState<PresentationEvaluation[]>([]);
 
     // Form State
+    const [currentEvaluationId, setCurrentEvaluationId] = useState<string | null>(null);
     const [selectedStudent, setSelectedStudent] = useState('');
     const [selectedSubject, setSelectedSubject] = useState('');
     const [scores, setScores] = useState<Record<number, number>>({});
     const [isSaving, setIsSaving] = useState(false);
     const [isAutoFilling, setIsAutoFilling] = useState(false);
     const [missingItems, setMissingItems] = useState<number[]>([]);
+    
+    // Comments
+    const [comments, setComments] = useState('');
 
     const isAdmin = currentUserId === 'DOCENTE';
 
@@ -46,6 +51,7 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
     // Handle deep linking from TeachersFolder
     useEffect(() => {
         if (initialStudentId && initialSubjectId && students.length > 0 && subjects.length > 0) {
+            handleNewEvaluation();
             setSelectedStudent(initialStudentId);
             setSelectedSubject(initialSubjectId);
             setView('form');
@@ -55,7 +61,7 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
 
     // Auto-select student if user is not admin
     useEffect(() => {
-        if (view === 'form' && !isAdmin && !initialStudentId) {
+        if (view === 'form' && !isAdmin && !initialStudentId && !selectedStudent) {
             setSelectedStudent(currentUserId);
         }
     }, [view, isAdmin, currentUserId, initialStudentId]);
@@ -102,6 +108,38 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
         return "text-danger";
     };
 
+    const handleNewEvaluation = () => {
+        setCurrentEvaluationId(null);
+        setSelectedStudent('');
+        setSelectedSubject('');
+        setScores({});
+        setMissingItems([]);
+        setComments('');
+        setView('form');
+    };
+
+    const handleEdit = (evaluation: PresentationEvaluation) => {
+        setCurrentEvaluationId(evaluation.id);
+        setSelectedStudent(evaluation.studentId);
+        setSelectedSubject(evaluation.subjectId);
+        setScores(evaluation.scores);
+        setMissingItems([]);
+        // Mock comments loading
+        setComments(''); 
+        setView('form');
+    };
+
+    const handleDelete = async (id: string) => {
+        if (confirm("¿Estás seguro de eliminar esta evaluación?")) {
+            try {
+                await PresentationService.delete(id);
+                setEvaluations(prev => prev.filter(e => e.id !== id));
+            } catch (error) {
+                console.error("Error deleting evaluation", error);
+            }
+        }
+    };
+
     const handleSave = async () => {
         setMissingItems([]);
 
@@ -118,26 +156,30 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
         }
 
         setIsSaving(true);
-        const newEval: PresentationEvaluation = {
-            id: `PRES-${Date.now()}`,
-            studentId: selectedStudent,
-            teacherId: currentUserId,
-            subjectId: selectedSubject,
-            date: new Date().toISOString(),
-            scores: scores,
-            average: parseFloat(average.toFixed(2))
-        };
-
+        
         try {
-            console.log("Saving Presentation Evaluation:", newEval);
-            const saved = await PresentationService.create(newEval);
-            setEvaluations(prev => [saved, ...prev]);
+            const evalData: PresentationEvaluation = {
+                id: currentEvaluationId || `PRES-${Date.now()}`,
+                studentId: selectedStudent,
+                teacherId: currentUserId,
+                subjectId: selectedSubject,
+                date: new Date().toISOString(),
+                scores: scores,
+                average: parseFloat(average.toFixed(2))
+                // Note: comments would be saved here
+            };
+
+            if (currentEvaluationId) {
+                await PresentationService.update(evalData);
+                setEvaluations(prev => prev.map(e => e.id === currentEvaluationId ? evalData : e));
+            } else {
+                const saved = await PresentationService.create(evalData);
+                setEvaluations(prev => [saved, ...prev]);
+            }
+            
             alert("Evaluación de presentación registrada exitosamente.");
             setView('list');
-            setScores({});
-            setSelectedStudent('');
-            setSelectedSubject('');
-            setMissingItems([]);
+            handleNewEvaluation();
         } catch (error) {
             console.error(error);
             alert("Error al guardar.");
@@ -166,7 +208,7 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
                 
                 {view === 'list' && (
                     <button 
-                        onClick={() => setView('form')}
+                        onClick={handleNewEvaluation}
                         className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition-all"
                     >
                         <PlusIcon className="h-5 w-5" /> Nueva Evaluación
@@ -193,14 +235,15 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
                                     <th className="p-4">Evaluador</th>
                                     <th className="p-4">Asignatura</th>
                                     <th className="p-4 text-center">Nota Promedio</th>
+                                    <th className="p-4 text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-secondary/10">
                                 {filteredEvaluations.length === 0 ? (
-                                    <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No hay evaluaciones registradas.</td></tr>
+                                    <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No hay evaluaciones registradas.</td></tr>
                                 ) : (
                                     filteredEvaluations.map(ev => (
-                                        <tr key={ev.id} className="hover:bg-background/50">
+                                        <tr key={ev.id} className="hover:bg-background/50 group">
                                             <td className="p-4 font-mono text-text-secondary">{new Date(ev.date).toLocaleDateString()}</td>
                                             <td className="p-4 font-bold text-text-primary">{getStudentName(ev.studentId)}</td>
                                             <td className="p-4 text-text-secondary text-xs">
@@ -211,6 +254,16 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
                                                 <span className={`font-bold px-2 py-1 rounded ${getAverageColor(ev.average)} bg-surface border border-secondary/10`}>
                                                     {ev.average.toFixed(1)}
                                                 </span>
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => handleEdit(ev)} className="p-1.5 hover:bg-primary/20 rounded text-primary" title="Editar">
+                                                        <EditIcon className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={() => handleDelete(ev.id)} className="p-1.5 hover:bg-danger/20 rounded text-danger" title="Eliminar">
+                                                        <TrashIcon className="h-4 w-4" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
@@ -256,7 +309,7 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
                     </div>
 
                     {/* Progress Card */}
-                    <div className="flex items-center gap-6 bg-surface border border-secondary/20 p-4 rounded-xl shadow-sm sticky top-0 z-10">
+                    <div className="flex items-center gap-6 bg-surface border border-secondary/20 p-4 rounded-xl shadow-sm sticky top-0 z-10 backdrop-blur-sm bg-surface/90">
                         <div className="text-right">
                             <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">Promedio</p>
                             <p className={`text-3xl font-bold ${getAverageColor(average)}`}>{average.toFixed(2)}</p>
@@ -271,18 +324,18 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
                         <button 
                             onClick={handleAIAutofill}
                             disabled={isAutoFilling || isSaving || !selectedStudent}
-                            className="flex items-center gap-2 bg-accent/10 text-accent hover:bg-accent hover:text-white px-4 py-2 rounded-lg font-bold transition-all mr-2 disabled:opacity-50"
+                            className="hidden sm:flex items-center gap-2 bg-accent/10 text-accent hover:bg-accent hover:text-white px-4 py-2 rounded-lg font-bold transition-all mr-2 disabled:opacity-50 text-sm"
                         >
-                            <SparklesIcon className={`h-5 w-5 ${isAutoFilling ? 'animate-pulse' : ''}`} />
-                            {isAutoFilling ? 'Generando...' : 'Autocompletar con IA'}
+                            <SparklesIcon className={`h-4 w-4 ${isAutoFilling ? 'animate-pulse' : ''}`} />
+                            {isAutoFilling ? 'Generando...' : 'Autocompletar'}
                         </button>
 
                         <button 
                             onClick={handleSave}
                             disabled={isSaving}
-                            className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-6 rounded-lg shadow-lg flex items-center gap-2 disabled:opacity-50"
+                            className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-6 rounded-lg shadow-lg flex items-center gap-2 disabled:opacity-50 text-sm"
                         >
-                            <CheckCircleIcon className="h-5 w-5" /> {isSaving ? "Guardando..." : "Guardar Rúbrica"}
+                            <CheckCircleIcon className="h-5 w-5" /> {isSaving ? "Guardando..." : "Guardar"}
                         </button>
                     </div>
 
@@ -339,6 +392,19 @@ const PresentationModule: React.FC<PresentationModuleProps> = ({ currentUserId, 
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+
+                    {/* Observations with Voice Dictation */}
+                    <div className="bg-surface p-6 rounded-xl border border-secondary/20 space-y-4">
+                        <label className="block text-sm font-bold text-text-primary uppercase tracking-wider">
+                            Feedback de la Presentación (Dictado por Voz)
+                        </label>
+                        <VoiceTextarea 
+                            value={comments} 
+                            onChange={setComments} 
+                            placeholder="Dicte sus comentarios sobre la exposición..."
+                            className="bg-background border-secondary/30"
+                        />
                     </div>
                 </div>
             )}

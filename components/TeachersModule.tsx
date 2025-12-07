@@ -1,11 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Teacher } from '../types';
-import { TeacherService } from '../services/dataService';
-import { BriefcaseIcon, PlusIcon, EditIcon, TrashIcon, DuplicateIcon, CloseIcon, ImageIcon, CheckCircleIcon, AcademicIcon } from './icons';
-
-interface TeachersModuleProps {
-}
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Teacher, AppDocument } from '../types';
+import { TeacherService, DocumentService } from '../services/dataService';
+import { BriefcaseIcon, PlusIcon, EditIcon, TrashIcon, DuplicateIcon, CloseIcon, CheckCircleIcon, FilterIcon, DownloadIcon, DocumentTextIcon, CloudUploadIcon } from './icons';
+import { exportToCSV } from '../utils';
 
 const emptyTeacher: Teacher = {
     id: '',
@@ -22,31 +20,34 @@ const emptyTeacher: Teacher = {
     university_postgrad: '',
     nationality: 'Chilena',
     sex: 'Otro',
-    photo_url: ''
+    photo_url: '',
+    subSpecialties: []
 };
 
-const TeachersModule: React.FC<TeachersModuleProps> = () => {
+const TeachersModule: React.FC = () => {
     const [teachers, setTeachers] = useState<Teacher[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [currentTeacher, setCurrentTeacher] = useState<Teacher>(emptyTeacher);
     const [isEditing, setIsEditing] = useState(false);
-    const [subjectsInput, setSubjectsInput] = useState('');
     
-    // Drag and Drop state
-    const [isDragging, setIsDragging] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    // Documents State
+    const [activeModalTab, setActiveModalTab] = useState<'info' | 'docs'>('info');
+    const [teacherDocuments, setTeacherDocuments] = useState<AppDocument[]>([]);
+    const docInputRef = useRef<HTMLInputElement>(null);
+
+    // Filter State
+    const [showFilters, setShowFilters] = useState(false);
+    const [filters, setFilters] = useState({
+        rank: '',
+        status: '',
+        specialty: '' // New Filter
+    });
 
     useEffect(() => {
         loadTeachers();
     }, []);
-
-    useEffect(() => {
-        if (isFormOpen) {
-            setSubjectsInput(currentTeacher.subjects_in_charge.join(', '));
-        }
-    }, [isFormOpen, currentTeacher]);
 
     const loadTeachers = async () => {
         setLoading(true);
@@ -60,49 +61,43 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
         }
     };
 
-    // Helper to convert file to Base64
-    const fileToBase64 = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = error => reject(error);
+    const loadDocuments = async (teacherId: string) => {
+        if (!teacherId) return;
+        const docs = await DocumentService.getByOwner(teacherId);
+        setTeacherDocuments(docs);
+    };
+
+    // Calculate unique universities for autocomplete suggestions
+    const uniqueUniversities = useMemo(() => {
+        const unis = new Set<string>();
+        teachers.forEach(t => {
+            if (t.university_undergrad) unis.add(t.university_undergrad);
+            if (t.university_postgrad) unis.add(t.university_postgrad);
         });
-    };
+        return Array.from(unis).sort();
+    }, [teachers]);
 
-    const handlePhotoSelect = async (files: FileList | null) => {
-        if (!files || files.length === 0) return;
-        const file = files[0];
-        if (!file.type.startsWith('image/')) return;
-
-        try {
-            const base64 = await fileToBase64(file);
-            setCurrentTeacher(prev => ({ ...prev, photo_url: base64 }));
-        } catch (error) {
-            console.error("Error reading file", error);
-        }
-    };
-
-    const handleDrag = (e: React.DragEvent<HTMLDivElement>, dragging: boolean) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(dragging);
-    };
-
-    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-        handleDrag(e, false);
-        handlePhotoSelect(e.dataTransfer.files);
-    };
+    // Unique Specialties
+    const uniqueSpecialties = useMemo(() => {
+        const specs = new Set<string>();
+        teachers.forEach(t => t.subSpecialties?.forEach(s => specs.add(s)));
+        return Array.from(specs).sort();
+    }, [teachers]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setCurrentTeacher(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubjectsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSubjectsInput(e.target.value);
-        const subjectsArray = e.target.value.split(',').map(s => s.trim()).filter(s => s !== '');
-        setCurrentTeacher(prev => ({ ...prev, subjects_in_charge: subjectsArray }));
+    const handleSpecialtyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        const specs = value.split(',').map(s => s.trim()).filter(s => s);
+        setCurrentTeacher(prev => ({ ...prev, subSpecialties: specs }));
+    };
+
+    const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -118,14 +113,47 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
             setIsFormOpen(false);
         } catch (error) {
             console.error("Error saving teacher", error);
-            alert("Error al guardar el docente");
         }
     };
 
     const handleEdit = (teacher: Teacher) => {
         setCurrentTeacher(teacher);
         setIsEditing(true);
+        setActiveModalTab('info');
+        loadDocuments(teacher.id);
         setIsFormOpen(true);
+    };
+
+    // --- DOCUMENT HANDLERS ---
+    const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        if (!currentTeacher.id) {
+            alert("Debe ingresar un RUT/ID válido para subir documentos.");
+            return;
+        }
+
+        const file = e.target.files[0];
+        const newDoc: AppDocument = {
+            id: `DOC-${Date.now()}`,
+            title: file.name,
+            type: file.name.split('.').pop()?.toUpperCase() || 'FILE',
+            category: 'Administrativo', 
+            uploadDate: new Date().toISOString(),
+            ownerType: 'Teacher',
+            ownerId: currentTeacher.id,
+            visibility: 'private', // Default to private for teachers usually
+            url: URL.createObjectURL(file)
+        };
+
+        await DocumentService.create(newDoc);
+        setTeacherDocuments(prev => [newDoc, ...prev]);
+    };
+
+    const handleDeleteDocument = async (id: string) => {
+        if(confirm("¿Eliminar documento?")) {
+            await DocumentService.delete(id);
+            setTeacherDocuments(prev => prev.filter(d => d.id !== id));
+        }
     };
 
     const handleDuplicate = (teacher: Teacher) => {
@@ -137,12 +165,14 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
             email_personal: '' 
         };
         setCurrentTeacher(copy);
-        setIsEditing(false); // Mode create based on copy
+        setTeacherDocuments([]); // Don't copy docs
+        setIsEditing(false);
+        setActiveModalTab('info');
         setIsFormOpen(true);
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm("¿Estás seguro de eliminar este perfil docente? Esta acción es irreversible.")) {
+        if (confirm("¿Estás seguro de eliminar este docente?")) {
             try {
                 await TeacherService.delete(id);
                 setTeachers(prev => prev.filter(t => t.id !== id));
@@ -156,7 +186,7 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(teacher, null, 2));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href",     dataStr);
-        downloadAnchorNode.setAttribute("download", `perfil_docente_${teacher.name.replace(/\s+/g, '_')}.json`);
+        downloadAnchorNode.setAttribute("download", `docente_${teacher.name.replace(/\s+/g, '_')}.json`);
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
@@ -164,14 +194,39 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
 
     const handleNew = () => {
         setCurrentTeacher(emptyTeacher);
+        setTeacherDocuments([]);
         setIsEditing(false);
+        setActiveModalTab('info');
         setIsFormOpen(true);
     };
 
-    const filteredTeachers = teachers.filter(t => 
-        t.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        t.id.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const handleExport = () => {
+        const dataToExport = filteredTeachers.map(t => ({
+            Nombre: t.name,
+            ID: t.id,
+            Jerarquia: t.rank,
+            Horas: t.contract_hours,
+            Email: t.email_ua,
+            Estado: t.status,
+            Ingreso: t.admission_date,
+            SubEspecialidades: t.subSpecialties?.join(', ')
+        }));
+        exportToCSV(dataToExport, `Docentes_${new Date().toISOString().split('T')[0]}`);
+    };
+
+    const handlePrint = () => {
+        window.print();
+    };
+
+    const filteredTeachers = teachers.filter(t => {
+        const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                              t.id.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesRank = filters.rank ? t.rank === filters.rank : true;
+        const matchesStatus = filters.status ? t.status === filters.status : true;
+        const matchesSpecialty = filters.specialty ? t.subSpecialties?.includes(filters.specialty) : true;
+        
+        return matchesSearch && matchesRank && matchesStatus && matchesSpecialty;
+    });
 
     const inputClass = "w-full bg-background border border-secondary/30 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none";
     const labelClass = "block text-xs font-semibold text-text-secondary mb-1";
@@ -183,36 +238,81 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                     <h2 className="text-3xl font-bold text-text-primary flex items-center gap-2">
                         <BriefcaseIcon className="h-8 w-8 text-primary" /> Cuerpo Docente
                     </h2>
-                    <p className="text-text-secondary">Gestión de fichas académicas y contractuales</p>
+                    <p className="text-text-secondary">Gestión de académicos y colaboradores</p>
                 </div>
-                <div className="flex gap-3 w-full md:w-auto">
+                <div className="flex gap-2 w-full md:w-auto flex-wrap justify-end">
                     <input 
                         type="text" 
                         placeholder="Buscar por nombre o RUT..." 
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        className="bg-background border border-secondary/30 rounded-lg px-4 py-2 text-sm flex-grow md:w-64"
+                        className="bg-background border border-secondary/30 rounded-lg px-4 py-2 text-sm flex-grow md:w-64 print:hidden"
                     />
+                    <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-text-secondary bg-surface border border-secondary/30 rounded-lg hover:bg-secondary/10 transition-colors print:hidden" title="Descargar CSV/Excel">
+                        <DocumentTextIcon className="h-4 w-4" />
+                    </button>
+                    <button onClick={handlePrint} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-text-secondary bg-surface border border-secondary/30 rounded-lg hover:bg-secondary/10 transition-colors print:hidden" title="Imprimir PDF">
+                        <DownloadIcon className="h-4 w-4" />
+                    </button>
+                    <button 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`px-3 py-2 rounded-lg border transition-colors print:hidden ${showFilters ? 'bg-secondary text-white border-secondary' : 'bg-background border-secondary/30 text-text-secondary hover:border-primary'}`}
+                        title="Filtros Avanzados"
+                    >
+                        <FilterIcon className="h-5 w-5" />
+                    </button>
                     <button 
                         onClick={handleNew}
-                        className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors shadow-lg shadow-primary/20"
+                        className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors shadow-lg shadow-primary/20 print:hidden"
                     >
                         <PlusIcon className="h-5 w-5" /> <span className="hidden sm:inline">Nuevo Docente</span>
                     </button>
                 </div>
             </div>
 
-            {/* Teachers Table */}
+            {/* Collapsible Filters */}
+            {showFilters && (
+                <div className="bg-surface p-4 rounded-xl border border-secondary/20 grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in-down print:hidden">
+                    <div>
+                        <label className="block text-xs font-bold text-text-secondary mb-1">Jerarquía Académica</label>
+                        <select name="rank" value={filters.rank} onChange={handleFilterChange} className={inputClass}>
+                            <option value="">Todas</option>
+                            <option value="Profesor Titular">Profesor Titular</option>
+                            <option value="Profesor Asociado">Profesor Asociado</option>
+                            <option value="Profesor Auxiliar">Profesor Auxiliar</option>
+                            <option value="Instructor">Instructor</option>
+                            <option value="Instructor Adjunto">Instructor Adjunto</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-text-secondary mb-1">Sub-especialidad</label>
+                        <select name="specialty" value={filters.specialty} onChange={handleFilterChange} className={inputClass}>
+                            <option value="">Todas</option>
+                            {uniqueSpecialties.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-text-secondary mb-1">Estado</label>
+                        <select name="status" value={filters.status} onChange={handleFilterChange} className={inputClass}>
+                            <option value="">Todos</option>
+                            <option value="Activo">Activo</option>
+                            <option value="Inactivo">Inactivo</option>
+                            <option value="Sabático">Sabático</option>
+                        </select>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-surface rounded-xl shadow-sm border border-secondary/20 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-secondary/10 text-text-secondary uppercase text-xs font-bold border-b border-secondary/20">
                             <tr>
                                 <th className="px-6 py-4">Docente</th>
-                                <th className="px-6 py-4">Cargo / Horas</th>
+                                <th className="px-6 py-4">Jerarquía / Horas</th>
+                                <th className="px-6 py-4 hidden md:table-cell">Sub-especialidades</th>
                                 <th className="px-6 py-4 hidden md:table-cell">Contacto</th>
-                                <th className="px-6 py-4 hidden lg:table-cell">Asignaturas</th>
-                                <th className="px-6 py-4 text-center">Acciones</th>
+                                <th className="px-6 py-4 text-center print:hidden">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-secondary/20">
@@ -225,11 +325,11 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                                     <tr key={teacher.id} className="hover:bg-secondary/5 transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 rounded-full bg-secondary/20 overflow-hidden flex-shrink-0 border border-secondary/30">
+                                                <div className="h-10 w-10 rounded-full bg-secondary/20 overflow-hidden flex-shrink-0 border border-secondary/30 flex items-center justify-center">
                                                     {teacher.photo_url ? (
                                                         <img src={teacher.photo_url} alt={teacher.name} className="h-full w-full object-cover" />
                                                     ) : (
-                                                        <BriefcaseIcon className="h-full w-full p-2 text-secondary" />
+                                                        <BriefcaseIcon className="h-5 w-5 text-secondary" />
                                                     )}
                                                 </div>
                                                 <div>
@@ -240,12 +340,20 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-1">
-                                                <span className={`inline-flex w-fit px-2 py-0.5 rounded text-xs font-bold bg-primary/10 text-primary`}>
-                                                    {teacher.rank}
+                                                <span className="font-medium text-text-primary">{teacher.rank}</span>
+                                                <span className="text-xs text-text-secondary bg-secondary/10 px-2 py-0.5 rounded w-fit">
+                                                    {teacher.contract_hours} Horas - {teacher.status}
                                                 </span>
-                                                <span className="text-xs text-text-secondary">
-                                                    {teacher.contract_hours} hrs • {teacher.status}
-                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 hidden md:table-cell">
+                                            <div className="flex flex-wrap gap-1">
+                                                {teacher.subSpecialties?.map((spec, i) => (
+                                                    <span key={i} className="text-[10px] bg-cyan-50 text-cyan-600 border border-cyan-100 px-1.5 py-0.5 rounded">
+                                                        {spec}
+                                                    </span>
+                                                ))}
+                                                {(!teacher.subSpecialties || teacher.subSpecialties.length === 0) && <span className="text-xs text-text-secondary italic">General</span>}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 hidden md:table-cell">
@@ -254,30 +362,18 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                                                 <div className="text-xs opacity-75">{teacher.phone}</div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 hidden lg:table-cell">
-                                             <div className="flex flex-wrap gap-1">
-                                                {teacher.subjects_in_charge.slice(0, 2).map((subject, idx) => (
-                                                    <span key={idx} className="bg-secondary/10 px-1.5 py-0.5 rounded text-[10px] text-text-secondary border border-secondary/20 truncate max-w-[120px]">
-                                                        {subject}
-                                                    </span>
-                                                ))}
-                                                {teacher.subjects_in_charge.length > 2 && (
-                                                    <span className="text-[10px] text-text-secondary px-1">+{teacher.subjects_in_charge.length - 2} más</span>
-                                                )}
-                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => handleDownload(teacher)} className="p-1.5 hover:bg-secondary/20 rounded text-text-secondary" title="Descargar Ficha">
+                                        <td className="px-6 py-4 print:hidden">
+                                            <div className="flex justify-center gap-2">
+                                                <button onClick={(e) => { e.stopPropagation(); handleDownload(teacher); }} className="p-1.5 hover:bg-secondary/20 rounded text-text-secondary" title="Descargar Ficha">
                                                     <CheckCircleIcon className="h-4 w-4" />
                                                 </button>
-                                                <button onClick={() => handleDuplicate(teacher)} className="p-1.5 hover:bg-secondary/20 rounded text-text-secondary" title="Duplicar">
+                                                <button onClick={(e) => { e.stopPropagation(); handleDuplicate(teacher); }} className="p-1.5 hover:bg-secondary/20 rounded text-text-secondary" title="Duplicar">
                                                     <DuplicateIcon className="h-4 w-4" />
                                                 </button>
-                                                <button onClick={() => handleEdit(teacher)} className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-text-secondary" title="Editar">
+                                                <button onClick={(e) => { e.stopPropagation(); handleEdit(teacher); }} className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-text-secondary" title="Editar">
                                                     <EditIcon className="h-4 w-4" />
                                                 </button>
-                                                <button onClick={() => handleDelete(teacher.id)} className="p-1.5 hover:bg-danger/20 hover:text-danger rounded text-text-secondary" title="Eliminar">
+                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(teacher.id); }} className="p-1.5 hover:bg-danger/20 hover:text-danger rounded text-text-secondary" title="Eliminar">
                                                     <TrashIcon className="h-4 w-4" />
                                                 </button>
                                             </div>
@@ -292,7 +388,7 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
 
             {/* Modal Form */}
             {isFormOpen && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 print:hidden">
                     <div className="bg-surface rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-secondary/20">
                         <header className="p-5 border-b border-secondary/20 flex justify-between items-center bg-surface/95 rounded-t-xl">
                             <h3 className="text-xl font-bold text-text-primary">
@@ -301,65 +397,28 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                             <button onClick={() => setIsFormOpen(false)} className="p-2 rounded-full hover:bg-secondary/20"><CloseIcon /></button>
                         </header>
                         
-                        <main className="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-                            {/* Left Column: Photo & Primary Info */}
-                            <div className="md:col-span-1 space-y-6">
-                                <div className="text-center">
-                                    <div 
-                                        className={`relative w-40 h-40 mx-auto rounded-full overflow-hidden border-4 cursor-pointer transition-all group ${isDragging ? 'border-primary scale-105' : 'border-secondary/20'}`}
-                                        onDragEnter={(e) => handleDrag(e, true)}
-                                        onDragLeave={(e) => handleDrag(e, false)}
-                                        onDragOver={(e) => handleDrag(e, true)}
-                                        onDrop={handleDrop}
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        {currentTeacher.photo_url ? (
-                                            <img src={currentTeacher.photo_url} alt="Profile" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-secondary/10 flex flex-col items-center justify-center text-secondary">
-                                                <ImageIcon className="h-10 w-10 mb-2" />
-                                                <span className="text-xs">Subir Foto</span>
-                                            </div>
-                                        )}
-                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                            <p className="text-white text-xs font-bold">Cambiar</p>
-                                        </div>
-                                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handlePhotoSelect(e.target.files)} />
-                                    </div>
-                                    <p className="text-xs text-text-secondary mt-2">Arrastra una imagen o haz clic</p>
-                                </div>
+                        {/* Tab Switcher */}
+                        <div className="px-6 pt-4 border-b border-secondary/10 flex gap-4">
+                            <button 
+                                onClick={() => setActiveModalTab('info')}
+                                className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${activeModalTab === 'info' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                            >
+                                Ficha Docente
+                            </button>
+                            <button 
+                                onClick={() => setActiveModalTab('docs')}
+                                className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeModalTab === 'docs' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                            >
+                                Documentos <span className="bg-secondary/20 px-1.5 rounded-full text-[10px] text-text-primary">{teacherDocuments.length}</span>
+                            </button>
+                        </div>
 
-                                <div className="space-y-3 p-4 bg-background rounded-lg border border-secondary/20">
-                                    <h4 className="text-sm font-bold text-accent border-b border-secondary/20 pb-1">Datos Contractuales</h4>
-                                    <div>
-                                        <label className={labelClass}>Fecha de Ingreso</label>
-                                        <input type="date" name="admission_date" value={currentTeacher.admission_date} onChange={handleInputChange} className={inputClass} required />
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Tipo de Contrato (Horas)</label>
-                                        <select name="contract_hours" value={currentTeacher.contract_hours} onChange={handleInputChange} className={inputClass}>
-                                            <option value="11">11 Horas</option>
-                                            <option value="22">22 Horas</option>
-                                            <option value="33">33 Horas</option>
-                                            <option value="44">44 Horas</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Estado</label>
-                                        <select name="status" value={currentTeacher.status} onChange={handleInputChange} className={inputClass}>
-                                            <option value="Activo">Activo</option>
-                                            <option value="Inactivo">Inactivo</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Right Column: Detailed Form */}
-                            <div className="md:col-span-2 space-y-6">
+                        <main className="p-6 overflow-y-auto">
+                            {activeModalTab === 'info' && (
                                 <form id="teacher-form" onSubmit={handleSubmit} className="space-y-6">
                                     <div className="space-y-4">
-                                        <h4 className="text-sm font-bold text-accent border-b border-secondary/20 pb-1 uppercase tracking-wider">Información Personal</h4>
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <h4 className="text-sm font-bold text-accent border-b border-secondary/20 pb-1 uppercase tracking-wider">Información Profesional</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <label className={labelClass}>Nombre Completo</label>
                                                 <input type="text" name="name" value={currentTeacher.name} onChange={handleInputChange} className={inputClass} required />
@@ -369,54 +428,45 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                                                 <input type="text" name="id" value={currentTeacher.id} onChange={handleInputChange} className={inputClass} required disabled={isEditing} />
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Nacionalidad</label>
-                                                <input type="text" name="nationality" value={currentTeacher.nationality} onChange={handleInputChange} className={inputClass} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Sexo</label>
-                                                <select name="sex" value={currentTeacher.sex} onChange={handleInputChange} className={inputClass}>
-                                                    <option value="Masculino">Masculino</option>
-                                                    <option value="Femenino">Femenino</option>
-                                                    <option value="Otro">Otro</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <h4 className="text-sm font-bold text-accent border-b border-secondary/20 pb-1 uppercase tracking-wider">Perfil Académico</h4>
-                                         <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className={labelClass}>Tipo (Rango Académico)</label>
+                                                <label className={labelClass}>Jerarquía Académica</label>
                                                 <select name="rank" value={currentTeacher.rank} onChange={handleInputChange} className={inputClass}>
-                                                    <option value="Instructor">Instructor</option>
-                                                    <option value="Profesor Auxiliar">Profesor Auxiliar</option>
                                                     <option value="Profesor Titular">Profesor Titular</option>
+                                                    <option value="Profesor Asociado">Profesor Asociado</option>
+                                                    <option value="Profesor Auxiliar">Profesor Auxiliar</option>
+                                                    <option value="Instructor">Instructor</option>
+                                                    <option value="Instructor Adjunto">Instructor Adjunto</option>
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className={labelClass}>Asignaturas a Cargo (Separadas por coma)</label>
-                                                <input type="text" value={subjectsInput} onChange={handleSubjectsChange} placeholder="Ej: Anatomía, Radiología I" className={inputClass} />
+                                                <label className={labelClass}>Horas Contrato</label>
+                                                <select name="contract_hours" value={currentTeacher.contract_hours} onChange={handleInputChange} className={inputClass}>
+                                                    <option value="11">11 Hrs</option>
+                                                    <option value="22">22 Hrs</option>
+                                                    <option value="33">33 Hrs</option>
+                                                    <option value="44">44 Hrs</option>
+                                                </select>
                                             </div>
-                                            <div>
-                                                <label className={labelClass}>Universidad Pregrado</label>
-                                                <input type="text" name="university_undergrad" value={currentTeacher.university_undergrad} onChange={handleInputChange} className={inputClass} />
-                                            </div>
-                                            <div>
-                                                <label className={labelClass}>Universidad Postgrado</label>
-                                                <input type="text" name="university_postgrad" value={currentTeacher.university_postgrad} onChange={handleInputChange} className={inputClass} />
+                                            <div className="md:col-span-2">
+                                                <label className={labelClass}>Sub-especialidades (separadas por coma)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={currentTeacher.subSpecialties?.join(', ') || ''} 
+                                                    onChange={handleSpecialtyChange}
+                                                    className={inputClass}
+                                                    placeholder="Ej: Neurorradiología, Intervencionista" 
+                                                />
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="space-y-4">
                                         <h4 className="text-sm font-bold text-accent border-b border-secondary/20 pb-1 uppercase tracking-wider">Contacto</h4>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="col-span-2 md:col-span-1">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
                                                 <label className={labelClass}>Email Institucional (UA)</label>
                                                 <input type="email" name="email_ua" value={currentTeacher.email_ua} onChange={handleInputChange} className={inputClass} />
                                             </div>
-                                            <div className="col-span-2 md:col-span-1">
+                                            <div>
                                                 <label className={labelClass}>Email Personal</label>
                                                 <input type="email" name="email_personal" value={currentTeacher.email_personal} onChange={handleInputChange} className={inputClass} />
                                             </div>
@@ -424,15 +474,99 @@ const TeachersModule: React.FC<TeachersModuleProps> = () => {
                                                 <label className={labelClass}>Teléfono</label>
                                                 <input type="tel" name="phone" value={currentTeacher.phone} onChange={handleInputChange} className={inputClass} />
                                             </div>
+                                            <div>
+                                                <label className={labelClass}>Estado</label>
+                                                <select name="status" value={currentTeacher.status} onChange={handleInputChange} className={inputClass}>
+                                                    <option value="Activo">Activo</option>
+                                                    <option value="Inactivo">Inactivo</option>
+                                                    <option value="Sabático">Sabático</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <h4 className="text-sm font-bold text-accent border-b border-secondary/20 pb-1 uppercase tracking-wider">Antecedentes Académicos</h4>
+                                        <datalist id="universities-list">
+                                            {uniqueUniversities.map(u => <option key={u} value={u} />)}
+                                        </datalist>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className={labelClass}>Universidad Pregrado</label>
+                                                <input 
+                                                    list="universities-list"
+                                                    type="text" 
+                                                    name="university_undergrad" 
+                                                    value={currentTeacher.university_undergrad} 
+                                                    onChange={handleInputChange} 
+                                                    className={inputClass}
+                                                    placeholder="Seleccione o escriba..." 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelClass}>Universidad Postgrado / Especialidad</label>
+                                                <input 
+                                                    list="universities-list"
+                                                    type="text" 
+                                                    name="university_postgrad" 
+                                                    value={currentTeacher.university_postgrad} 
+                                                    onChange={handleInputChange} 
+                                                    className={inputClass} 
+                                                    placeholder="Seleccione o escriba..."
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </form>
-                            </div>
+                            )}
+
+                            {activeModalTab === 'docs' && (
+                                <div className="space-y-6">
+                                    <div className="bg-background/50 border border-secondary/20 p-4 rounded-lg flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-bold text-text-primary">Subir Nuevo Documento</h4>
+                                            <p className="text-xs text-text-secondary">Archivos se guardarán en el repositorio central bajo este docente.</p>
+                                            {!currentTeacher.id && <p className="text-xs text-danger font-bold mt-1">Requiere RUT/ID para subir</p>}
+                                        </div>
+                                        <label className={`bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-bold cursor-pointer transition-colors flex items-center gap-2 ${!currentTeacher.id ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                            <CloudUploadIcon className="h-5 w-5" />
+                                            <span>Seleccionar Archivo</span>
+                                            <input type="file" className="hidden" ref={docInputRef} onChange={handleDocumentUpload} disabled={!currentTeacher.id} />
+                                        </label>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        {teacherDocuments.length === 0 ? (
+                                            <div className="text-center p-8 border-2 border-dashed border-secondary/20 rounded-xl text-text-secondary">
+                                                No hay documentos asociados a este docente.
+                                            </div>
+                                        ) : (
+                                            teacherDocuments.map(doc => (
+                                                <div key={doc.id} className="flex items-center justify-between p-3 bg-surface border border-secondary/20 rounded-lg hover:border-primary/30 transition-all">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="p-2 bg-blue-100 rounded text-blue-600">
+                                                            <DocumentTextIcon className="h-5 w-5" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-bold text-text-primary">{doc.title}</p>
+                                                            <p className="text-xs text-text-secondary">{doc.category} • {new Date(doc.uploadDate).toLocaleDateString()}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <a href={doc.url} download className="p-2 hover:bg-secondary/10 rounded text-primary" title="Descargar"><DownloadIcon className="h-4 w-4" /></a>
+                                                        <button onClick={() => handleDeleteDocument(doc.id)} className="p-2 hover:bg-danger/10 rounded text-danger" title="Eliminar"><TrashIcon className="h-4 w-4" /></button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </main>
 
                         <footer className="p-5 border-t border-secondary/20 bg-surface/95 rounded-b-xl flex justify-end gap-3">
                             <button onClick={() => setIsFormOpen(false)} className="px-5 py-2 rounded-lg border border-secondary/30 hover:bg-secondary/10 transition-colors">Cancelar</button>
-                            <button type="submit" form="teacher-form" className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-lg transition-all">Guardar Ficha</button>
+                            {activeModalTab === 'info' && <button type="submit" form="teacher-form" className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-lg transition-all">Guardar Ficha</button>}
                         </footer>
                     </div>
                 </div>
