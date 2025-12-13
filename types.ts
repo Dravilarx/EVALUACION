@@ -45,9 +45,17 @@ export const MODULE_PERMISSIONS: Record<string, UserRole[]> = {
     documents: ['ADMIN'],
     // Row: encuesta
     poll: ['ADMIN'],
+    // Row: Curriculum (NEW)
+    curriculum: ['ADMIN', 'RESIDENT'],
+    // Row: Help / Manual (NEW)
+    help: ['ADMIN', 'TEACHER', 'RESIDENT'],
+    // Row: Alumni / Ex-alumnos (NEW)
+    alumni: ['ADMIN', 'TEACHER'],
+    // Row: Program Info / Nosotros (NEW)
+    program_info: ['ADMIN', 'TEACHER', 'RESIDENT'],
     
     // Internal/Extra features (Implicit permissions based on context)
-    change_requests: ['TEACHER', 'ADMIN'], // Feature added in previous step
+    change_requests: ['TEACHER', 'ADMIN'],
 };
 
 export interface UserProfile {
@@ -62,7 +70,7 @@ export interface UserProfile {
 export interface LogEntry {
     id: string;
     timestamp: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'REQUEST';
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'REQUEST' | 'HELP_QUERY';
     module: string;
     details: string;
     userId: string;
@@ -211,6 +219,16 @@ export interface Teacher {
   subSpecialties?: string[]; // New field for specialties
 }
 
+export interface MentorshipSlot {
+    id: string;
+    teacherId: string;
+    studentId?: string; // null/undefined = available, string = booked
+    studentName?: string; // denormalized for convenience
+    day: string; // 'Lun', 'Mar', 'Mié', 'Jue', 'Vie'
+    hour: string; // '08:00', '09:00'
+    status: 'available' | 'booked';
+}
+
 export interface SubjectProcedure {
     id: string;
     name: string;
@@ -221,6 +239,7 @@ export interface Subject {
     id: string;
     name: string;
     code: string;
+    type?: 'Standard' | 'Transversal'; // New type to distinguish
     lead_teacher_id: string; // ID del docente a cargo
     participating_teachers_ids: string[]; // IDs de docentes participantes
     syllabus_url?: string; // URL to PDF
@@ -325,7 +344,7 @@ export interface Annotation {
 
 export interface Activity {
     id: string;
-    type: 'Curso' | 'Congreso' | 'Estadía' | 'Publicación' | 'Poster' | 'Vinculación';
+    type: 'Curso' | 'Congreso' | 'Estadía' | 'Publicación' | 'Poster' | 'Vinculación' | 'Docencia' | 'Seminario';
     title: string;
     date: string;
     institution: string;
@@ -383,6 +402,45 @@ export interface Acta {
     }
 }
 
+// NEW: Manual Grade Entry for overrides or historical data
+export interface ManualGradeEntry {
+    id: string;
+    studentId: string;
+    subjectId: string;
+    type: 'Written' | 'Competency' | 'Presentation' | 'Transversal'; // Added Transversal
+    grade: number; // 1.0 to 7.0
+    date: string;
+    comment?: string;
+    authorId: string;
+}
+
+// --- FINAL EXAM TYPES ---
+export interface FinalExam {
+    id: string;
+    studentId: string;
+    date: string;
+    commissionIds: string[]; // List of Teacher IDs
+    caseTopics: string[]; // List of clinical case topics presented (1-10)
+    scores: Record<number, number>; // Rubric Dimension ID -> Score (0-4)
+    finalScore: number; // 0-4 scale
+    finalGrade: number; // 1.0 - 7.0 scale
+    comments: string;
+    status: 'Pending' | 'Completed';
+}
+
+// --- NEW SIX MONTH EXAM TYPE ---
+export interface SixMonthExam {
+    id: string;
+    studentId: string;
+    date: string;
+    commissionIds: string[]; 
+    caseTopics: string[]; 
+    scores: Record<number, number>; 
+    numericGrade: number; // 1.0 - 7.0 scale
+    finalStatus: 'Aprobado' | 'Reprobado' | 'Pending'; // Determined by grade > 5.0
+    comments: string;
+}
+
 // NEW FOR RESIDENT TIMELINE & DOCS
 export interface TimelineEvent {
     id: string;
@@ -403,7 +461,8 @@ export interface AppDocument {
     url?: string;
     ownerType: 'Student' | 'Teacher' | 'Program';
     ownerId?: string; // NULL if Program, otherwise StudentID or TeacherID
-    visibility: 'public' | 'teachers_only' | 'residents_only' | 'private'; 
+    visibility: 'public' | 'teachers_only' | 'residents_only' | 'private';
+    textContent?: string; // New: Stores AI extracted text content for searching
 }
 
 // Keep generic type for compatibility if needed, or alias it
@@ -418,4 +477,73 @@ export interface ProcedureLog {
     count: number;
     validatedCount: number;
     status: 'Pending' | 'Validated';
+}
+
+// --- NEW CV TYPES ---
+export interface CVEducation {
+    id: string;
+    institution: string;
+    degree: string;
+    startYear: string;
+    endYear: string;
+}
+
+export interface CVExperience {
+    id: string;
+    institution: string;
+    role: string;
+    startYear: string;
+    endYear: string;
+    description: string;
+}
+
+export interface CVProgramRole {
+    id: string;
+    role: string; // e.g. "Jefe de Residentes", "Encargado de Programación"
+    description: string;
+    period: string; // e.g. "2024", "Enero-Junio 2025"
+}
+
+export interface CVData {
+    fullName: string;
+    rut: string;
+    email: string;
+    phone: string;
+    specialty: string;
+    summary: string;
+    education: CVEducation[];
+    clinicalRotations: CVExperience[]; // Derived from Subjects/Grades
+    academicActivities: Activity[]; // Derived from Activities
+    programRoles: CVProgramRole[]; // New: Internal roles
+    skills: string[];
+    languages: string[];
+}
+
+// --- ALUMNI MODULE ---
+export interface AlumniFollowUp {
+    id: string;
+    studentId: string;
+    date: string; // ISO date of contact
+    currentJob: string;
+    location: string;
+    contactMethod: string; // Email, LinkedIn, etc.
+    notes?: string;
+    registeredBy: string;
+}
+
+// --- PROGRAM INFO / NOSOTROS ---
+export interface ProgramAuthority {
+    id: string;
+    name: string;
+    position: string;
+    email?: string;
+    photoUrl?: string; // Base64
+    bio?: string;
+}
+
+export interface ProgramInfo {
+    description: string;
+    mission: string;
+    vision: string;
+    authorities: ProgramAuthority[];
 }

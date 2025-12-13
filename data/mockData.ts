@@ -138,6 +138,7 @@ export const mockSubjects: Subject[] = [
         id: "SUBJ-001",
         name: "Radiología Torácica",
         code: "RAD-TOR-101",
+        type: 'Standard',
         lead_teacher_id: "10.111.222-3", // Dr. Marcelo Avila
         participating_teachers_ids: ["12.333.444-5"], // Dra. Ana Fuentes
         procedures: [
@@ -150,6 +151,7 @@ export const mockSubjects: Subject[] = [
         id: "SUBJ-002",
         name: "Neurorradiología",
         code: "RAD-NEU-201",
+        type: 'Standard',
         lead_teacher_id: "10.111.222-3", // Dr. Marcelo Avila
         participating_teachers_ids: [],
         procedures: [
@@ -162,6 +164,7 @@ export const mockSubjects: Subject[] = [
         id: "SUBJ-003",
         name: "Ultrasonido Doppler",
         code: "RAD-ECO-301",
+        type: 'Standard',
         lead_teacher_id: "12.333.444-5", // Dra. Ana Fuentes
         participating_teachers_ids: ["10.111.222-3"], // Dr. Marcelo Avila
         procedures: [
@@ -169,6 +172,33 @@ export const mockSubjects: Subject[] = [
             { id: "proc-8", name: "Doppler Carotídeo", goal: 15 },
             { id: "proc-9", name: "Doppler Venoso EEII", goal: 15 }
         ]
+    },
+    {
+        id: "SUBJ-004",
+        name: "Bioética Médica",
+        code: "TRV-001",
+        type: 'Transversal',
+        lead_teacher_id: "10.111.222-3",
+        participating_teachers_ids: [],
+        procedures: []
+    },
+    {
+        id: "SUBJ-005",
+        name: "Inglés Técnico",
+        code: "TRV-002",
+        type: 'Transversal',
+        lead_teacher_id: "12.333.444-5",
+        participating_teachers_ids: [],
+        procedures: []
+    },
+    {
+        id: "SUBJ-006",
+        name: "Metodología de la Investigación",
+        code: "TRV-003",
+        type: 'Transversal',
+        lead_teacher_id: "10.111.222-3",
+        participating_teachers_ids: [],
+        procedures: []
     }
 ];
 

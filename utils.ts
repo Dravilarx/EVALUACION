@@ -20,8 +20,8 @@ export const calculateGrade = (score: number, maxScore: number): number => {
         grade = passingGrade + (maxGrade - passingGrade) * ((score - passingScore) / (maxScore - passingScore));
     }
 
-    // Round to 1 decimal place
-    return Math.round(grade * 10) / 10;
+    // Round to 2 decimal places for Grade Book precision
+    return Math.round(grade * 100) / 100;
 };
 
 export const getGradeColor = (grade: number): string => {

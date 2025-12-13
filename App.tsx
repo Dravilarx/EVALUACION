@@ -18,7 +18,11 @@ import GradesModule from './components/GradesModule';
 import AuditLog from './components/AuditLog'; 
 import AdminPanel from './components/AdminPanel'; 
 import MessagingModule from './components/MessagingModule';
-import DocumentsModule from './components/DocumentsModule'; // Imported
+import DocumentsModule from './components/DocumentsModule';
+import CurriculumModule from './components/CurriculumModule';
+import HelpModule from './components/HelpModule';
+import AlumniModule from './components/AlumniModule';
+import ProgramInfoModule from './components/ProgramInfoModule'; // Imported
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import { DocumentTextIcon, ShieldExclamationIcon, MailIcon, PaperAirplaneIcon } from './components/icons';
@@ -86,7 +90,7 @@ const ChangeRequestModule: React.FC<{ onCreateRequest: () => void }> = ({ onCrea
     </div>
 );
 
-type Module = 'dashboard' | 'subjects' | 'residents' | 'teachers' | 'news' | 'evaluations' | 'residents_folder' | 'teachers_folder' | 'surveys' | 'presentation' | 'documents' | 'poll' | 'annotations' | 'activities' | 'grades' | 'audit_log' | 'admin_panel' | 'change_requests' | 'messaging';
+type Module = 'dashboard' | 'subjects' | 'residents' | 'teachers' | 'news' | 'evaluations' | 'residents_folder' | 'teachers_folder' | 'surveys' | 'presentation' | 'documents' | 'poll' | 'annotations' | 'activities' | 'grades' | 'audit_log' | 'admin_panel' | 'change_requests' | 'messaging' | 'curriculum' | 'help' | 'alumni' | 'program_info';
 
 // Initial Admin User
 const ADMIN_USER: UserProfile = {
@@ -267,7 +271,7 @@ const App: React.FC = () => {
             case 'subjects':
                 return <SubjectsModule />;
             case 'teachers':
-                return <TeachersModule />;
+                return <TeachersModule currentUserId={currentUser.id} />;
             case 'residents':
                 return <ResidentsModule currentUserId={currentUser.id} />;
             case 'news':
@@ -326,6 +330,14 @@ const App: React.FC = () => {
                     initialDraft={messagingDraft}
                     onClearDraft={() => setMessagingDraft(null)}
                 />;
+             case 'curriculum':
+                return <CurriculumModule currentUserId={currentUser.id} />;
+             case 'help':
+                return <HelpModule />;
+             case 'alumni':
+                return <AlumniModule currentUserId={currentUser.id} />;
+             case 'program_info':
+                return <ProgramInfoModule currentUserId={currentUser.id} />;
             default:
                 return <div>Módulo no encontrado</div>;
         }

@@ -1,11 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { StudentService, QuizService, AttemptService, CompetencyService, PresentationService, SubjectService, TeacherService, ActaService } from '../services/dataService';
+import { StudentService, QuizService, AttemptService, CompetencyService, PresentationService, SubjectService, TeacherService, ActaService, ManualGradeService, FinalExamService, SixMonthExamService } from '../services/dataService';
 import { generateActaFeedback } from '../services/geminiService';
-import { Student, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation, Subject, Teacher, Acta } from '../types';
+import { Student, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation, Subject, Teacher, Acta, ManualGradeEntry, FinalExam, SixMonthExam } from '../types';
 import GradesTab from './GradesTab';
-import ActasTab from './ActasTab';
-import { RefreshIcon, TableIcon, DocumentTextIcon, CloseIcon, CheckCircleIcon, ChartBarIcon, ScreenIcon, ClipboardCheckIcon, SparklesIcon } from './icons';
+import TransversalGradesTab from './TransversalGradesTab';
+import FinalExamTab from './FinalExamTab';
+import SixMonthExamTab from './SixMonthExamTab';
+import RadiologyFinalGradeTab from './RadiologyFinalGradeTab';
+import { RefreshIcon, TableIcon, DocumentTextIcon, CloseIcon, CheckCircleIcon, ChartBarIcon, ScreenIcon, ClipboardCheckIcon, SparklesIcon, BriefcaseIcon, AcademicIcon } from './icons'; 
 import { getGradeColor } from '../utils';
 
 interface GradesModuleProps {
@@ -14,7 +17,7 @@ interface GradesModuleProps {
 
 const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'grades' | 'actas'>('grades');
+    const [activeTab, setActiveTab] = useState<'grades' | 'transversal' | 'six_month_exam' | 'final_exam' | 'final_radiology'>('grades');
     const [students, setStudents] = useState<Student[]>([]);
     const [quizzes, setQuizzes] = useState<Quiz[]>([]);
     const [attempts, setAttempts] = useState<Attempt[]>([]);
@@ -23,6 +26,9 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
     const [subjects, setSubjects] = useState<Subject[]>([]);
     const [teachers, setTeachers] = useState<Teacher[]>([]);
     const [actas, setActas] = useState<Acta[]>([]);
+    const [manualGrades, setManualGrades] = useState<ManualGradeEntry[]>([]);
+    const [finalExams, setFinalExams] = useState<FinalExam[]>([]);
+    const [sixMonthExams, setSixMonthExams] = useState<SixMonthExam[]>([]);
 
     // State for Acta Generation Modal
     const [isActaModalOpen, setIsActaModalOpen] = useState(false);
@@ -34,7 +40,7 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const [st, qz, at, co, pr, su, te, ac] = await Promise.all([
+                const [st, qz, at, co, pr, su, te, ac, mg, fe, sme] = await Promise.all([
                     StudentService.getAll(),
                     QuizService.getAll(),
                     AttemptService.getAll(),
@@ -42,7 +48,10 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
                     PresentationService.getAll(),
                     SubjectService.getAll(),
                     TeacherService.getAll(),
-                    ActaService.getAll()
+                    ActaService.getAll(),
+                    ManualGradeService.getAll(),
+                    FinalExamService.getAll(),
+                    SixMonthExamService.getAll()
                 ]);
                 setStudents(st);
                 setQuizzes(qz);
@@ -52,6 +61,9 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
                 setSubjects(su);
                 setTeachers(te);
                 setActas(ac);
+                setManualGrades(mg);
+                setFinalExams(fe);
+                setSixMonthExams(sme);
             } catch (error) {
                 console.error("Error loading grades data:", error);
             } finally {
@@ -120,23 +132,58 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
             alert("Acta generada exitosamente. Ahora está disponible para la aceptación del residente.");
             setIsActaModalOpen(false);
             setActaCandidate(null);
-            setActiveTab('actas');
+            // Was navigating to actas tab, now stay on grades or do nothing
         } catch (error) {
             console.error(error);
             alert("Error al generar el acta.");
         }
     };
 
-    const handleUpdateActa = (updatedActa: Acta) => {
-        setActas(prev => prev.map(a => a.id === updatedActa.id ? updatedActa : a));
+    const handleManualGradeUpdate = (newEntry: ManualGradeEntry) => {
+        setManualGrades(prev => {
+            const index = prev.findIndex(m => m.studentId === newEntry.studentId && m.subjectId === newEntry.subjectId && m.type === newEntry.type);
+            if (index >= 0) {
+                const updated = [...prev];
+                updated[index] = newEntry;
+                return updated;
+            }
+            return [...prev, newEntry];
+        });
     };
+
+    const handleFinalExamUpdate = (exam: FinalExam) => {
+        setFinalExams(prev => {
+            const idx = prev.findIndex(e => e.id === exam.id);
+            if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = exam;
+                return updated;
+            }
+            return [exam, ...prev];
+        });
+    };
+
+    const handleSixMonthExamUpdate = (exam: SixMonthExam) => {
+        setSixMonthExams(prev => {
+            const idx = prev.findIndex(e => e.id === exam.id);
+            if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = exam;
+                return updated;
+            }
+            return [exam, ...prev];
+        });
+    };
+
+    // Filter Standard Subjects for GradesTab
+    const standardSubjects = subjects.filter(s => s.type !== 'Transversal');
 
     if (loading) {
         return (
             <div className="flex h-full items-center justify-center">
                 <div className="flex flex-col items-center gap-3 opacity-60">
                      <RefreshIcon className="h-10 w-10 animate-spin text-primary" />
-                     <p className="font-medium">Calculando calificaciones ponderadas...</p>
+                     <p className="font-medium">Calculando calificaciones...</p>
                 </div>
             </div>
         );
@@ -144,44 +191,98 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
 
     return (
         <div className="animate-fade-in-up h-full flex flex-col relative">
-            <div className="flex border-b border-secondary/20 mb-6 gap-6">
+            <div className="flex border-b border-secondary/20 mb-6 gap-6 overflow-x-auto flex-shrink-0">
                 <button 
                     onClick={() => setActiveTab('grades')}
-                    className={`pb-3 px-1 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 ${activeTab === 'grades' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                    className={`pb-3 px-2 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${activeTab === 'grades' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                 >
                     <TableIcon className="h-5 w-5" /> Libro de Notas
                 </button>
                 <button 
-                    onClick={() => setActiveTab('actas')}
-                    className={`pb-3 px-1 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 ${activeTab === 'actas' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                    onClick={() => setActiveTab('transversal')}
+                    className={`pb-3 px-2 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${activeTab === 'transversal' ? 'border-purple-600 text-purple-600' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
                 >
-                    <DocumentTextIcon className="h-5 w-5" /> Actas y Certificados
+                    <BriefcaseIcon className="h-5 w-5" /> Ramos Transversales
+                </button>
+                <button 
+                    onClick={() => setActiveTab('six_month_exam')}
+                    className={`pb-3 px-2 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${activeTab === 'six_month_exam' ? 'border-pink-600 text-pink-600' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                >
+                    <ClipboardCheckIcon className="h-5 w-5" /> Examen 6 Meses
+                </button>
+                <button 
+                    onClick={() => setActiveTab('final_exam')}
+                    className={`pb-3 px-2 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${activeTab === 'final_exam' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                >
+                    <AcademicIcon className="h-5 w-5" /> Examen Final
+                </button>
+                <button 
+                    onClick={() => setActiveTab('final_radiology')}
+                    className={`pb-3 px-2 font-bold text-sm transition-colors flex items-center gap-2 border-b-2 whitespace-nowrap ${activeTab === 'final_radiology' ? 'border-purple-600 text-purple-600' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+                >
+                    <AcademicIcon className="h-5 w-5" /> Nota Final Titulación
                 </button>
             </div>
 
-            {activeTab === 'grades' ? (
-                <GradesTab 
-                    students={students}
-                    quizzes={quizzes}
-                    attempts={attempts}
-                    competencies={competencies}
-                    presentations={presentations}
-                    subjects={subjects}
-                    teachers={teachers}
-                    currentUserId={currentUserId}
-                    onGenerateActa={handleInitiateActa}
-                    existingActas={actas}
-                />
-            ) : (
-                <ActasTab 
-                    actas={actas}
-                    students={students}
-                    subjects={subjects}
-                    teachers={teachers}
-                    currentUserId={currentUserId}
-                    onUpdateActa={handleUpdateActa}
-                />
-            )}
+            <div className="flex-grow overflow-y-auto">
+                {activeTab === 'grades' && (
+                    <GradesTab 
+                        students={students}
+                        quizzes={quizzes}
+                        attempts={attempts}
+                        competencies={competencies}
+                        presentations={presentations}
+                        subjects={standardSubjects} // Pass filtered subjects
+                        teachers={teachers}
+                        currentUserId={currentUserId}
+                        onGenerateActa={handleInitiateActa}
+                        existingActas={actas}
+                        manualGrades={manualGrades}
+                        onManualGradeUpdate={handleManualGradeUpdate}
+                    />
+                )}
+
+                {activeTab === 'transversal' && (
+                    <TransversalGradesTab 
+                        students={students}
+                        subjects={subjects}
+                        teachers={teachers}
+                        currentUserId={currentUserId}
+                        manualGrades={manualGrades}
+                        onManualGradeUpdate={handleManualGradeUpdate}
+                    />
+                )}
+
+                {activeTab === 'six_month_exam' && (
+                    <SixMonthExamTab 
+                        students={students}
+                        teachers={teachers}
+                        currentUserId={currentUserId}
+                        exams={sixMonthExams}
+                        onUpdate={handleSixMonthExamUpdate}
+                    />
+                )}
+
+                {activeTab === 'final_exam' && (
+                    <FinalExamTab 
+                        students={students}
+                        teachers={teachers}
+                        currentUserId={currentUserId}
+                        finalExams={finalExams}
+                        onUpdate={handleFinalExamUpdate}
+                    />
+                )}
+
+                {activeTab === 'final_radiology' && (
+                    <RadiologyFinalGradeTab 
+                        students={students}
+                        subjects={subjects}
+                        actas={actas}
+                        manualGrades={manualGrades}
+                        finalExams={finalExams}
+                    />
+                )}
+            </div>
 
             {/* ACTA GENERATION MODAL */}
             {isActaModalOpen && actaCandidate && (
@@ -195,7 +296,7 @@ const GradesModule: React.FC<GradesModuleProps> = ({ currentUserId }) => {
                             <button onClick={() => setIsActaModalOpen(false)} className="p-2 hover:bg-secondary/20 rounded-full"><CloseIcon /></button>
                         </header>
 
-                        <div className="p-6 space-y-6">
+                        <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
                             {/* Summary Card */}
                             <div className="bg-background rounded-lg border border-secondary/20 p-4">
                                 <div className="flex justify-between items-center mb-4 border-b border-secondary/10 pb-2">

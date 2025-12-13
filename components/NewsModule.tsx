@@ -143,7 +143,8 @@ const NewsModule: React.FC<NewsModuleProps> = ({ students, currentUserId }) => {
         const entryToSave = {
             ...editingEntry,
             id: editingEntry.id || `NEWS-${Date.now()}`,
-            author: editingEntry.author || (currentUserId === '10611061' ? 'Administración' : 'Docencia'),
+            // If editing, keep author. If new, set default based on user ID (Mock logic)
+            author: editingEntry.id ? editingEntry.author : (editingEntry.author || (currentUserId === '10611061' ? 'Dr. Marcelo Avila' : 'Coordinación Docente')),
             date: editingEntry.date || new Date().toISOString()
         };
 
@@ -271,6 +272,12 @@ const NewsModule: React.FC<NewsModuleProps> = ({ students, currentUserId }) => {
                                             <span className="text-xs text-text-secondary flex items-center gap-1">
                                                 <CalendarIcon className="h-3 w-3" /> {new Date(item.date).toLocaleDateString()}
                                             </span>
+
+                                            {/* AUTHOR DISPLAY */}
+                                            <span className="text-xs text-text-secondary flex items-center gap-1 border-l border-secondary/30 pl-2 ml-1">
+                                                <span className="opacity-70">Por:</span>
+                                                <span className="font-semibold text-primary">{item.author || 'Administración'}</span>
+                                            </span>
                                         </div>
                                         {canManage && (
                                             <div className="flex gap-1">
@@ -332,7 +339,7 @@ const NewsModule: React.FC<NewsModuleProps> = ({ students, currentUserId }) => {
                         </div>
                         
                         {/* Metadata Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className={labelClass}>Categoría</label>
                                 <select 
@@ -365,6 +372,16 @@ const NewsModule: React.FC<NewsModuleProps> = ({ students, currentUserId }) => {
                                     value={editingEntry.date.slice(0, 16)} 
                                     onChange={e => setEditingEntry({...editingEntry, date: new Date(e.target.value).toISOString()})} 
                                     className={inputClass} 
+                                />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Autor (Firma)</label>
+                                <input 
+                                    type="text" 
+                                    value={editingEntry.author} 
+                                    onChange={e => setEditingEntry({...editingEntry, author: e.target.value})} 
+                                    className={inputClass} 
+                                    placeholder={currentUserId === '10611061' ? 'Dr. Marcelo Avila' : 'Nombre del docente'}
                                 />
                             </div>
                         </div>

@@ -24,7 +24,11 @@ import {
     TerminalIcon,
     ServerIcon,
     ShieldExclamationIcon,
-    MailIcon // Added
+    MailIcon,
+    IdentificationIcon,
+    QuestionMarkCircleIcon,
+    GraduationCapIcon,
+    BuildingIcon // Added
 } from './icons';
 import { Student, UserRole, UserProfile, MODULE_PERMISSIONS } from '../types';
 import { MessageService } from '../services/dataService'; // Import Service
@@ -128,7 +132,7 @@ const Layout: React.FC<LayoutProps> = ({
     return (
         <div className={`bg-background text-text-primary min-h-screen flex overflow-hidden font-sans transition-colors duration-300 ${darkMode ? 'dark' : ''}`}>
             {/* Sidebar Navigation */}
-            <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-surface border-r border-secondary/20 flex flex-col transition-all duration-300 z-30 flex-shrink-0 shadow-sm relative`}>
+            <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-surface border-r border-secondary/20 flex flex-col transition-all duration-300 z-30 flex-shrink-0 shadow-sm relative print:hidden`}>
                 
                 {/* Role Indicator Strip */}
                 <div className={`absolute left-0 top-0 bottom-0 w-1 ${currentUser.activeRole === 'ADMIN' ? 'bg-purple-600' : currentUser.activeRole === 'TEACHER' ? 'bg-primary' : 'bg-emerald-500'}`}></div>
@@ -168,15 +172,17 @@ const Layout: React.FC<LayoutProps> = ({
                     {isModuleAllowed('change_requests') && <SidebarItem icon={<ShieldExclamationIcon />} label="Solicitudes" isActive={activeModule === 'change_requests'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('change_requests')} />}
 
                     {/* Academic */}
-                    {isSectionVisible(['subjects', 'teachers', 'residents']) && (
+                    {isSectionVisible(['program_info', 'subjects', 'teachers', 'residents', 'alumni']) && (
                         <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
                             {isSidebarOpen ? 'Académico' : '•••'}
                         </div>
                     )}
 
+                    {isModuleAllowed('program_info') && <SidebarItem icon={<BuildingIcon />} label="Nosotros" isActive={activeModule === 'program_info'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('program_info')} />}
                     {isModuleAllowed('subjects') && <SidebarItem icon={<BookOpenIcon />} label="Asignaturas" isActive={activeModule === 'subjects'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('subjects')} />}
                     {isModuleAllowed('teachers') && <SidebarItem icon={<BriefcaseIcon />} label="Docentes" isActive={activeModule === 'teachers'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('teachers')} />}
                     {isModuleAllowed('residents') && <SidebarItem icon={<UsersIcon />} label="Residentes" isActive={activeModule === 'residents'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('residents')} />}
+                    {isModuleAllowed('alumni') && <SidebarItem icon={<GraduationCapIcon />} label="Exalumnos" isActive={activeModule === 'alumni'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('alumni')} />}
 
                     {/* Evaluations */}
                     {isSectionVisible(['surveys', 'presentation', 'evaluations', 'grades']) && (
@@ -191,7 +197,7 @@ const Layout: React.FC<LayoutProps> = ({
                     {isModuleAllowed('grades') && <SidebarItem icon={<TableIcon />} label="Libro de Notas" isActive={activeModule === 'grades'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('grades')} />}
 
                     {/* Management Folders */}
-                    {isSectionVisible(['residents_folder', 'teachers_folder', 'annotations', 'activities']) && (
+                    {isSectionVisible(['residents_folder', 'teachers_folder', 'annotations', 'activities', 'curriculum']) && (
                         <div className={`pt-4 pb-2 px-3 text-[10px] font-bold text-text-secondary uppercase tracking-wider opacity-60 transition-opacity ${!isSidebarOpen && 'text-center'}`}>
                             {isSidebarOpen ? 'Gestión' : '•••'}
                         </div>
@@ -201,6 +207,7 @@ const Layout: React.FC<LayoutProps> = ({
                     {isModuleAllowed('teachers_folder') && <SidebarItem icon={<FolderIcon />} label="Carpeta Docentes" isActive={activeModule === 'teachers_folder'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('teachers_folder')} />}
                     {isModuleAllowed('annotations') && <SidebarItem icon={<ChatBubbleLeftRightIcon />} label="Anotaciones" isActive={activeModule === 'annotations'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('annotations')} />}
                     {isModuleAllowed('activities') && <SidebarItem icon={<GlobeIcon />} label="Extensión" isActive={activeModule === 'activities'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('activities')} />}
+                    {isModuleAllowed('curriculum') && <SidebarItem icon={<IdentificationIcon />} label="Currículum" isActive={activeModule === 'curriculum'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('curriculum')} />}
 
                     {/* Communication */}
                     {isSectionVisible(['news', 'documents', 'poll', 'messaging']) && (
@@ -214,6 +221,11 @@ const Layout: React.FC<LayoutProps> = ({
                     {isModuleAllowed('documents') && <SidebarItem icon={<DocumentTextIcon />} label="Documentos" isActive={activeModule === 'documents'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('documents')} />}
                     {isModuleAllowed('poll') && <SidebarItem icon={<FileIcon />} label="Encuesta" isActive={activeModule === 'poll'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('poll')} />}
                 </nav>
+
+                {/* HELP ITEM AT BOTTOM */}
+                <div className="p-2 mx-1 border-t border-secondary/20">
+                    <SidebarItem icon={<QuestionMarkCircleIcon />} label="Ayuda / Manual" isActive={activeModule === 'help'} isExpanded={isSidebarOpen} onClick={() => setActiveModule('help')} />
+                </div>
 
                 <div className="p-4 border-t border-secondary/20 bg-background/50 ml-1">
                     <div className={`flex items-center gap-3 ${!isSidebarOpen && 'justify-center'}`}>
@@ -239,7 +251,7 @@ const Layout: React.FC<LayoutProps> = ({
             {/* Main Content Area */}
             <main className="flex-grow flex flex-col h-screen overflow-hidden">
                 {/* Global Header */}
-                <header className="h-16 bg-surface border-b border-secondary/20 flex items-center justify-between px-6 flex-shrink-0 z-20 shadow-sm transition-colors duration-300">
+                <header className="h-16 bg-surface border-b border-secondary/20 flex items-center justify-between px-6 flex-shrink-0 z-20 shadow-sm transition-colors duration-300 print:hidden">
                     <div className="flex items-center gap-4 text-sm text-text-secondary">
                         <span className="opacity-60 hidden sm:inline">Programa de Especialización</span>
                         <span className="hidden sm:inline">/</span>
@@ -252,6 +264,10 @@ const Layout: React.FC<LayoutProps> = ({
                              activeModule === 'admin_panel' ? 'Administración' :
                              activeModule === 'change_requests' ? 'Solicitudes de Cambio' :
                              activeModule === 'messaging' ? 'Mensajería Interna' :
+                             activeModule === 'curriculum' ? 'Constructor de CV' :
+                             activeModule === 'help' ? 'Manual Interactivo' :
+                             activeModule === 'alumni' ? 'Exalumnos' :
+                             activeModule === 'program_info' ? 'Nosotros' :
                              activeModule.replace('_', ' ')}
                         </span>
                     </div>
@@ -290,8 +306,8 @@ const Layout: React.FC<LayoutProps> = ({
                 </header>
 
                 {/* Module Content Wrapper */}
-                <div className="flex-grow p-6 overflow-y-auto bg-background scrollbar-thin scrollbar-thumb-secondary/30 transition-colors duration-300 relative">
-                    <div className="max-w-7xl mx-auto h-full">
+                <div className="flex-grow p-6 overflow-y-auto bg-background scrollbar-thin scrollbar-thumb-secondary/30 transition-colors duration-300 relative print:p-0 print:bg-white">
+                    <div className="max-w-7xl mx-auto h-full print:max-w-none print:h-auto">
                         {children}
                     </div>
                 </div>

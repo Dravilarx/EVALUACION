@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Teacher, Annotation, Activity, Student, Subject, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation, SurveyResult } from '../types';
-import { TeacherService, AnnotationService, ActivityService, StudentService, SubjectService, QuizService, AttemptService, CompetencyService, PresentationService, SurveyService } from '../services/dataService';
+import { Teacher, Annotation, Activity, Student, Subject, Quiz, Attempt, CompetencyEvaluation, PresentationEvaluation, SurveyResult, MentorshipSlot } from '../types';
+import { TeacherService, AnnotationService, ActivityService, StudentService, SubjectService, QuizService, AttemptService, CompetencyService, PresentationService, SurveyService, MentorshipService } from '../services/dataService';
 import { FolderIcon, BriefcaseIcon, ThumbUpIcon, ThumbDownIcon, ChatBubbleLeftRightIcon, GlobeIcon, ClipboardCheckIcon, ChartBarIcon, ScreenIcon, ArrowUpRightIcon, CheckCircleIcon, BellIcon, CalendarIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -28,8 +28,8 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'pending' | 'annotations' | 'activities' | 'mentorship' | 'feedback'>('pending');
 
-    // Mentorship Mock State
-    const [availability, setAvailability] = useState<Record<string, boolean>>({});
+    // Mentorship Data
+    const [mentorshipSlots, setMentorshipSlots] = useState<MentorshipSlot[]>([]);
 
     useEffect(() => {
         const loadData = async () => {
@@ -59,14 +59,14 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
     useEffect(() => {
         const loadDetails = async () => {
             if (selectedTeacher) {
-                const [notes, acts] = await Promise.all([
+                const [notes, acts, slots] = await Promise.all([
                     AnnotationService.getByTarget(selectedTeacher.id),
                     ActivityService.getByParticipant(selectedTeacher.id),
+                    MentorshipService.getByTeacher(selectedTeacher.id)
                 ]);
                 setAnnotations(notes);
                 setActivities(acts);
-                // Reset availability for demo
-                setAvailability({});
+                setMentorshipSlots(slots);
             }
         };
         loadDetails();
@@ -145,12 +145,30 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
         });
     }, [selectedTeacher, surveys]);
 
-    const toggleAvailability = (day: string, hour: string) => {
-        const key = `${day}-${hour}`;
-        setAvailability(prev => ({
-            ...prev,
-            [key]: !prev[key]
-        }));
+    const handleSlotClick = async (day: string, hour: string) => {
+        // Teacher interaction in Folder: Toggle Availability only.
+        // Assuming Folder is mostly teacher-facing for management.
+        if (!selectedTeacher) return;
+
+        const existingSlot = mentorshipSlots.find(s => s.day === day && s.hour === hour);
+
+        if (existingSlot) {
+            if (existingSlot.status === 'booked' && !confirm(`¿Cancelar reserva de ${existingSlot.studentName}?`)) {
+                return;
+            }
+            await MentorshipService.delete(existingSlot.id);
+            setMentorshipSlots(prev => prev.filter(s => s.id !== existingSlot.id));
+        } else {
+            const newSlot: MentorshipSlot = {
+                id: `MS-${Date.now()}`,
+                teacherId: selectedTeacher.id,
+                day,
+                hour,
+                status: 'available'
+            };
+            await MentorshipService.create(newSlot);
+            setMentorshipSlots(prev => [...prev, newSlot]);
+        }
     };
 
     const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie'];
@@ -335,11 +353,12 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                                         </h3>
                                         <div className="text-xs text-text-secondary flex gap-4">
                                             <span className="flex items-center gap-1"><div className="w-3 h-3 bg-purple-500 rounded"></div> Disponible</span>
-                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-secondary/10 rounded border border-secondary/20"></div> No Disponible</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded"></div> Reservado</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 border border-secondary/20 bg-surface rounded"></div> No Disponible</span>
                                         </div>
                                     </div>
                                     
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-x-auto bg-background/50 p-4 rounded-xl border border-secondary/10">
                                         <div className="min-w-[600px] grid grid-cols-6 gap-2">
                                             <div className="p-2"></div> {/* Corner */}
                                             {days.map(day => (
@@ -348,16 +367,36 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                                             
                                             {hours.map(hour => (
                                                 <React.Fragment key={hour}>
-                                                    <div className="text-right pr-4 text-xs font-mono text-text-secondary py-3">{hour}</div>
+                                                    <div className="text-right pr-4 text-xs font-mono text-text-secondary py-3 flex items-center justify-end">{hour}</div>
                                                     {days.map(day => {
-                                                        const key = `${day}-${hour}`;
-                                                        const isAvail = availability[key];
+                                                        const slot = mentorshipSlots.find(s => s.day === day && s.hour === hour);
+                                                        const isAvailable = slot?.status === 'available';
+                                                        const isBooked = slot?.status === 'booked';
+                                                        
+                                                        let cellClass = "bg-surface border-secondary/20 opacity-50"; 
+                                                        let title = "Click para habilitar";
+                                                        let content = "";
+
+                                                        if (isBooked) {
+                                                            cellClass = "bg-red-500 border-red-600 text-white hover:bg-red-600";
+                                                            title = `Reservado por ${slot.studentName}`;
+                                                            content = slot.studentName?.split(' ')[0] || "Ocupado";
+                                                        } else if (isAvailable) {
+                                                            cellClass = "bg-purple-500 border-purple-600 text-white hover:bg-purple-600";
+                                                            title = "Disponible (Click para eliminar)";
+                                                            content = "Libre";
+                                                        } else {
+                                                            cellClass += " hover:bg-secondary/10";
+                                                        }
+
                                                         return (
                                                             <button
-                                                                key={key}
-                                                                onClick={() => toggleAvailability(day, hour)}
-                                                                className={`rounded-lg transition-all border ${isAvail ? 'bg-purple-500 border-purple-600 shadow-sm' : 'bg-surface border-secondary/20 hover:bg-secondary/10'}`}
+                                                                key={`${day}-${hour}`}
+                                                                onClick={() => handleSlotClick(day, hour)}
+                                                                className={`rounded-lg transition-all border h-10 flex items-center justify-center text-[10px] font-bold ${cellClass}`}
+                                                                title={title}
                                                             >
+                                                                {content}
                                                             </button>
                                                         );
                                                     })}
@@ -366,7 +405,7 @@ const TeachersFolder: React.FC<TeachersFolderProps> = ({ currentUserId, onNaviga
                                         </div>
                                     </div>
                                     <p className="text-xs text-text-secondary mt-4 text-center">
-                                        * Haz clic en los bloques para marcar disponibilidad. Los residentes podrán solicitar estos horarios.
+                                        * Haz clic en los bloques para gestionar disponibilidad. Las reservas aparecen en rojo.
                                     </p>
                                 </div>
                             )}

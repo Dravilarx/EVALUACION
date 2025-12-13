@@ -373,3 +373,120 @@ export const generateWordCloudData = async (texts: string[]): Promise<{ text: st
         return [];
     }
 };
+
+// --- NEW: INTELLIGENT DYNAMIC FAQ GENERATOR ---
+
+export interface FAQItem {
+    q: string;
+    a: string;
+}
+
+export interface FAQCategory {
+    category: string;
+    items: FAQItem[];
+}
+
+export const generateDynamicFAQ = async (userQueries: string[], systemContext: string): Promise<FAQCategory[]> => {
+    try {
+        // Only take the last 50 queries to keep context reasonable
+        const recentQueries = userQueries.slice(-50).join("\n- ");
+        
+        const prompt = `
+            Actúa como un analista de soporte técnico inteligente.
+            
+            **Tarea:**
+            Analiza la siguiente lista de preguntas reales realizadas por usuarios al chat de soporte del sistema "EvalúaMed".
+            1. Agrupa las preguntas por temática similar.
+            2. Identifica las 3-5 preguntas MÁS FRECUENTES o importantes.
+            3. Redacta una pregunta genérica clara (FAQ) para cada una.
+            4. Redacta la respuesta correcta basándote estrictamente en el "Contexto del Sistema" proporcionado abajo.
+            5. Organízalas en categorías lógicas (ej: "Evaluaciones", "Acceso", "General").
+
+            **Contexto del Sistema (Manual):**
+            ${systemContext}
+
+            **Preguntas de Usuarios Recientes:**
+            ${recentQueries || "No hay preguntas recientes. Genera FAQs básicas por defecto sobre cómo crear cuestionarios y evaluar."}
+
+            **Formato de Salida (JSON Array):**
+            [
+              {
+                "category": "Nombre Categoría",
+                "items": [
+                  { "q": "¿Pregunta frecuente?", "a": "Respuesta clara y directa." }
+                ]
+              }
+            ]
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                temperature: 0.4
+            }
+        });
+
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error generating dynamic FAQs:", error);
+        // Fallback static list just in case
+        return [
+            {
+                category: "General (Fallback)",
+                items: [{ q: "¿Cómo uso el sistema?", a: "Navegue usando la barra lateral izquierda." }]
+            }
+        ];
+    }
+};
+
+// --- NEW: DOCUMENT CONTENT EXTRACTION ---
+
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+            const result = reader.result as string;
+            // Remove the Data URL prefix (e.g., "data:application/pdf;base64,")
+            const base64Data = result.split(',')[1];
+            resolve(base64Data);
+        };
+        reader.onerror = error => reject(error);
+    });
+};
+
+export const parseDocumentContent = async (file: File): Promise<string> => {
+    try {
+        const base64 = await fileToBase64(file);
+        const mimeType = file.type;
+
+        // Construct parts based on file type
+        const parts: any[] = [
+            {
+                inlineData: {
+                    mimeType: mimeType,
+                    data: base64
+                }
+            },
+            {
+                text: "Extract all the text content from this document and format it as clean, readable Markdown. If it is a spreadsheet, format the data as a Markdown table. Do not summarize, try to preserve the full textual content."
+            }
+        ];
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash', // Use generic model which handles multimodal inputs well
+            contents: { parts: parts },
+            config: {
+                temperature: 0.2 // Low temp for accurate extraction
+            }
+        });
+
+        return response.text?.trim() || "No se pudo extraer texto del documento.";
+
+    } catch (error) {
+        console.error("Error parsing document with AI:", error);
+        return "Error al procesar el documento con IA. El formato podría no ser compatible o el archivo es demasiado grande.";
+    }
+};

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Teacher, AppDocument } from '../types';
-import { TeacherService, DocumentService } from '../services/dataService';
-import { BriefcaseIcon, PlusIcon, EditIcon, TrashIcon, DuplicateIcon, CloseIcon, CheckCircleIcon, FilterIcon, DownloadIcon, DocumentTextIcon, CloudUploadIcon } from './icons';
+import { Teacher, AppDocument, MentorshipSlot, Student } from '../types';
+import { TeacherService, DocumentService, MentorshipService, StudentService } from '../services/dataService';
+import { BriefcaseIcon, PlusIcon, EditIcon, TrashIcon, DuplicateIcon, CloseIcon, CheckCircleIcon, FilterIcon, DownloadIcon, DocumentTextIcon, CloudUploadIcon, EyeIcon, CalendarIcon } from './icons';
 import { exportToCSV } from '../utils';
 
 const emptyTeacher: Teacher = {
@@ -24,13 +24,24 @@ const emptyTeacher: Teacher = {
     subSpecialties: []
 };
 
-const TeachersModule: React.FC = () => {
+interface TeachersModuleProps {
+    currentUserId: string;
+}
+
+const TeachersModule: React.FC<TeachersModuleProps> = ({ currentUserId }) => {
     const [teachers, setTeachers] = useState<Teacher[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    
+    // UI State
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [currentTeacher, setCurrentTeacher] = useState<Teacher>(emptyTeacher);
     const [isEditing, setIsEditing] = useState(false);
+    
+    // Availability/Mentorship State
+    const [mentorshipSlots, setMentorshipSlots] = useState<MentorshipSlot[]>([]);
+    const [currentStudentName, setCurrentStudentName] = useState('');
     
     // Documents State
     const [activeModalTab, setActiveModalTab] = useState<'info' | 'docs'>('info');
@@ -45,9 +56,22 @@ const TeachersModule: React.FC = () => {
         specialty: '' // New Filter
     });
 
+    const isTeacher = currentUserId === 'DOCENTE' || currentUserId === '10611061';
+
+    // Mock Calendar Data
+    const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie'];
+    const hours = ['08:00', '09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00'];
+
     useEffect(() => {
         loadTeachers();
-    }, []);
+        if (!isTeacher) {
+            // Get student name for booking
+            StudentService.getAll().then(students => {
+                const me = students.find(s => s.id === currentUserId);
+                if (me) setCurrentStudentName(me.name);
+            });
+        }
+    }, [currentUserId]);
 
     const loadTeachers = async () => {
         setLoading(true);
@@ -65,6 +89,11 @@ const TeachersModule: React.FC = () => {
         if (!teacherId) return;
         const docs = await DocumentService.getByOwner(teacherId);
         setTeacherDocuments(docs);
+    };
+
+    const loadMentorshipSlots = async (teacherId: string) => {
+        const slots = await MentorshipService.getByTeacher(teacherId);
+        setMentorshipSlots(slots);
     };
 
     // Calculate unique universities for autocomplete suggestions
@@ -117,11 +146,64 @@ const TeachersModule: React.FC = () => {
     };
 
     const handleEdit = (teacher: Teacher) => {
+        if (!isTeacher) return;
         setCurrentTeacher(teacher);
         setIsEditing(true);
         setActiveModalTab('info');
         loadDocuments(teacher.id);
         setIsFormOpen(true);
+    };
+
+    const handleViewDetail = (teacher: Teacher) => {
+        setCurrentTeacher(teacher);
+        loadMentorshipSlots(teacher.id);
+        setIsDetailOpen(true);
+    };
+
+    // --- MENTORSHIP HANDLERS ---
+    const handleSlotClick = async (day: string, hour: string) => {
+        const existingSlot = mentorshipSlots.find(s => s.day === day && s.hour === hour);
+
+        if (isTeacher) {
+            // Teacher Mode: Toggle Availability
+            if (existingSlot) {
+                // If booked, maybe confirm cancellation?
+                if (existingSlot.status === 'booked' && !confirm(`¿Cancelar reserva de ${existingSlot.studentName}?`)) {
+                    return;
+                }
+                // Delete slot (make unavailable)
+                await MentorshipService.delete(existingSlot.id);
+                setMentorshipSlots(prev => prev.filter(s => s.id !== existingSlot.id));
+            } else {
+                // Create Available Slot
+                const newSlot: MentorshipSlot = {
+                    id: `MS-${Date.now()}`,
+                    teacherId: currentTeacher.id,
+                    day,
+                    hour,
+                    status: 'available'
+                };
+                await MentorshipService.create(newSlot);
+                setMentorshipSlots(prev => [...prev, newSlot]);
+            }
+        } else {
+            // Resident Mode: Book or Cancel Own Booking
+            if (!existingSlot) return; // Cannot book unavailable slot
+
+            if (existingSlot.status === 'available') {
+                // Book it
+                if (confirm(`¿Reservar mentoría el ${day} a las ${hour}?`)) {
+                    const booked = await MentorshipService.book(existingSlot.id, currentUserId, currentStudentName);
+                    setMentorshipSlots(prev => prev.map(s => s.id === booked.id ? booked : s));
+                }
+            } else if (existingSlot.studentId === currentUserId) {
+                // Cancel my booking
+                if (confirm(`¿Cancelar tu reserva?`)) {
+                    const cancelled = await MentorshipService.cancelBooking(existingSlot.id);
+                    setMentorshipSlots(prev => prev.map(s => s.id === cancelled.id ? cancelled : s));
+                }
+            }
+        }
     };
 
     // --- DOCUMENT HANDLERS ---
@@ -238,7 +320,7 @@ const TeachersModule: React.FC = () => {
                     <h2 className="text-3xl font-bold text-text-primary flex items-center gap-2">
                         <BriefcaseIcon className="h-8 w-8 text-primary" /> Cuerpo Docente
                     </h2>
-                    <p className="text-text-secondary">Gestión de académicos y colaboradores</p>
+                    <p className="text-text-secondary">Gestión de académicos y disponibilidad de mentoría.</p>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto flex-wrap justify-end">
                     <input 
@@ -261,12 +343,14 @@ const TeachersModule: React.FC = () => {
                     >
                         <FilterIcon className="h-5 w-5" />
                     </button>
-                    <button 
-                        onClick={handleNew}
-                        className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors shadow-lg shadow-primary/20 print:hidden"
-                    >
-                        <PlusIcon className="h-5 w-5" /> <span className="hidden sm:inline">Nuevo Docente</span>
-                    </button>
+                    {isTeacher && (
+                        <button 
+                            onClick={handleNew}
+                            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors shadow-lg shadow-primary/20 print:hidden"
+                        >
+                            <PlusIcon className="h-5 w-5" /> <span className="hidden sm:inline">Nuevo Docente</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -322,7 +406,11 @@ const TeachersModule: React.FC = () => {
                                 <tr><td colSpan={5} className="p-8 text-center text-text-secondary">No se encontraron docentes.</td></tr>
                             ) : (
                                 filteredTeachers.map(teacher => (
-                                    <tr key={teacher.id} className="hover:bg-secondary/5 transition-colors group">
+                                    <tr 
+                                        key={teacher.id} 
+                                        className="hover:bg-secondary/5 transition-colors group cursor-pointer"
+                                        onClick={() => handleViewDetail(teacher)}
+                                    >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="h-10 w-10 rounded-full bg-secondary/20 overflow-hidden flex-shrink-0 border border-secondary/30 flex items-center justify-center">
@@ -364,18 +452,19 @@ const TeachersModule: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4 print:hidden">
                                             <div className="flex justify-center gap-2">
-                                                <button onClick={(e) => { e.stopPropagation(); handleDownload(teacher); }} className="p-1.5 hover:bg-secondary/20 rounded text-text-secondary" title="Descargar Ficha">
-                                                    <CheckCircleIcon className="h-4 w-4" />
+                                                <button onClick={(e) => { e.stopPropagation(); handleViewDetail(teacher); }} className="p-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded transition-colors font-bold text-xs px-3" title="Ver Perfil">
+                                                    <EyeIcon className="h-4 w-4 inline mr-1" /> Ver
                                                 </button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDuplicate(teacher); }} className="p-1.5 hover:bg-secondary/20 rounded text-text-secondary" title="Duplicar">
-                                                    <DuplicateIcon className="h-4 w-4" />
-                                                </button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleEdit(teacher); }} className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-text-secondary" title="Editar">
-                                                    <EditIcon className="h-4 w-4" />
-                                                </button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(teacher.id); }} className="p-1.5 hover:bg-danger/20 hover:text-danger rounded text-text-secondary" title="Eliminar">
-                                                    <TrashIcon className="h-4 w-4" />
-                                                </button>
+                                                {isTeacher && (
+                                                    <>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(teacher); }} className="p-1.5 hover:bg-primary/20 hover:text-primary rounded text-text-secondary" title="Editar">
+                                                            <EditIcon className="h-4 w-4" />
+                                                        </button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(teacher.id); }} className="p-1.5 hover:bg-danger/20 hover:text-danger rounded text-text-secondary" title="Eliminar">
+                                                            <TrashIcon className="h-4 w-4" />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -386,7 +475,130 @@ const TeachersModule: React.FC = () => {
                 </div>
             </div>
 
-            {/* Modal Form */}
+            {/* DETAIL / MENTORSHIP VIEW MODAL */}
+            {isDetailOpen && currentTeacher && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in-up">
+                    <div className="bg-surface rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-secondary/20">
+                        <header className="p-6 border-b border-secondary/20 flex justify-between items-start bg-secondary/5 rounded-t-xl">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 rounded-full bg-primary/10 overflow-hidden border-2 border-white shadow-sm flex items-center justify-center">
+                                    {currentTeacher.photo_url ? (
+                                        <img src={currentTeacher.photo_url} alt={currentTeacher.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <BriefcaseIcon className="h-8 w-8 text-primary" />
+                                    )}
+                                </div>
+                                <div>
+                                    <h3 className="text-2xl font-bold text-text-primary">{currentTeacher.name}</h3>
+                                    <p className="text-text-secondary">{currentTeacher.rank} • {currentTeacher.email_ua}</p>
+                                    <div className="flex gap-2 mt-1">
+                                        {currentTeacher.subSpecialties?.map(s => <span key={s} className="text-xs bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded-full">{s}</span>)}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsDetailOpen(false)} className="p-2 rounded-full hover:bg-secondary/20"><CloseIcon /></button>
+                        </header>
+
+                        <div className="p-6 overflow-y-auto">
+                            <h4 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2 border-b border-secondary/10 pb-2">
+                                <CalendarIcon className="h-5 w-5 text-purple-600" /> Disponibilidad para Mentoría
+                            </h4>
+                            
+                            <div className="flex justify-between items-center mb-4 text-xs">
+                                <div className="flex gap-4">
+                                    {isTeacher ? (
+                                        <>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-purple-500 rounded"></div> Disponible</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded"></div> Reservado</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 border border-secondary/20 rounded"></div> No Disponible</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-purple-500 rounded"></div> Disponible (Click para reservar)</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-success rounded"></div> Tu Reserva</span>
+                                            <span className="flex items-center gap-1"><div className="w-3 h-3 bg-gray-300 rounded"></div> Ocupado</span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="overflow-x-auto bg-background/50 p-4 rounded-xl border border-secondary/10">
+                                <div className="min-w-[600px] grid grid-cols-6 gap-2">
+                                    <div className="p-2"></div> 
+                                    {days.map(day => (
+                                        <div key={day} className="text-center font-bold text-text-secondary py-2">{day}</div>
+                                    ))}
+                                    
+                                    {hours.map(hour => (
+                                        <React.Fragment key={hour}>
+                                            <div className="text-right pr-4 text-xs font-mono text-text-secondary py-3 flex items-center justify-end">{hour}</div>
+                                            {days.map(day => {
+                                                const slot = mentorshipSlots.find(s => s.day === day && s.hour === hour);
+                                                const isAvailable = slot?.status === 'available';
+                                                const isBooked = slot?.status === 'booked';
+                                                const isMyBooking = isBooked && slot?.studentId === currentUserId;
+                                                
+                                                let cellClass = "bg-surface border-secondary/20 opacity-50"; // Default Empty
+                                                let title = "No Disponible";
+                                                let content = "";
+
+                                                if (isTeacher) {
+                                                    if (isBooked) {
+                                                        cellClass = "bg-red-500 border-red-600 text-white hover:bg-red-600";
+                                                        title = `Reservado por ${slot.studentName}`;
+                                                        content = slot.studentName?.split(' ')[0] || "Ocupado";
+                                                    } else if (isAvailable) {
+                                                        cellClass = "bg-purple-500 border-purple-600 text-white hover:bg-purple-600";
+                                                        title = "Disponible (Click para eliminar)";
+                                                        content = "Libre";
+                                                    } else {
+                                                        cellClass += " hover:bg-secondary/10";
+                                                        title = "Click para habilitar";
+                                                    }
+                                                } else {
+                                                    // Resident View
+                                                    if (isMyBooking) {
+                                                        cellClass = "bg-success border-success text-white font-bold hover:bg-success/80";
+                                                        title = "Tu Reserva (Click para cancelar)";
+                                                        content = "Tu Reserva";
+                                                    } else if (isBooked) {
+                                                        cellClass = "bg-gray-300 border-gray-400 text-gray-500 cursor-not-allowed";
+                                                        title = "Ocupado";
+                                                        content = "Ocupado";
+                                                    } else if (isAvailable) {
+                                                        cellClass = "bg-purple-500 border-purple-600 text-white cursor-pointer hover:bg-purple-600 shadow-sm animate-pulse";
+                                                        title = "Disponible - Click para reservar";
+                                                        content = "Reservar";
+                                                    }
+                                                }
+
+                                                return (
+                                                    <button
+                                                        key={`${day}-${hour}`}
+                                                        onClick={() => handleSlotClick(day, hour)}
+                                                        className={`rounded-lg transition-all border h-10 flex items-center justify-center text-[10px] font-bold ${cellClass}`}
+                                                        title={title}
+                                                        disabled={!isTeacher && isBooked && !isMyBooking}
+                                                    >
+                                                        {content}
+                                                    </button>
+                                                );
+                                            })}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
+                            </div>
+                            <p className="text-xs text-text-secondary mt-3 text-center italic">
+                                {isTeacher 
+                                    ? "* Haz clic en un bloque vacío para habilitarlo. Haz clic en uno habilitado para eliminarlo."
+                                    : "* Selecciona un bloque morado para reservar una sesión de mentoría."}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* EDIT Modal Form */}
             {isFormOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 print:hidden">
                     <div className="bg-surface rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-secondary/20">

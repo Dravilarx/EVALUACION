@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Quiz, Question, StudentStats, QuestionStats, QuizStats } from '../types';
 import { getGradeColor } from '../utils';
@@ -78,6 +77,10 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
             filtered.sort((a, b) => {
                 const aValue = a[sortConfig.key as keyof QuestionStats];
                 const bValue = b[sortConfig.key as keyof QuestionStats];
+                
+                // Check for object types to avoid invalid comparisons
+                if (typeof aValue === 'object' || typeof bValue === 'object') return 0;
+
                 if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -165,8 +168,8 @@ const StatisticsDashboard: React.FC<StatsDashboardProps> = ({ studentStats, ques
                                 </thead>
                                 <tbody>
                                     {filteredQuestionStats.map(q => {
-                                        // Calculate total valid answers to compute percentages
-                                        const total = Object.values(q.distractorBreakdown).reduce((a: number, b: number) => a + b, 0);
+                                        // Calculate total valid answers to compute percentages. Explicitly cast to number[] for safety.
+                                        const total = (Object.values(q.distractorBreakdown) as number[]).reduce((a: number, b: number) => a + b, 0);
                                         const originalQ = questions.find(qu => qu.codigo_pregunta === q.codigo_pregunta);
                                         const correctOptionId = originalQ?.alternativas?.find(a => a.es_correcta)?.id || originalQ?.respuesta_correcta_vf;
 
